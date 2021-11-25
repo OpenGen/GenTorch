@@ -4,6 +4,8 @@ NOTE: The code in this repository is not currently intended for external users. 
 
 This repository is based on the hypothesis that a port of [Gen](gen.dev) to C++, using LibTorch for numerical types and operations and automatic differentiation, will be useful for industry research use cases, will be a potential backend for a port of Gen to Python, will provide a balance of ergonomics and performance for learning and inference in structured generative models with stochastic structure, and and will be useful for real-time applications in robotics, computer vision, perception, and human-understanding.
 
+NOTE: Uses C++17.
+
 ## Installing LibTorch dependency
 
 This library depends on the C++ distribution of PyTorch, called LibTorch.
@@ -13,6 +15,7 @@ So far, the code has only been tested with the CPU-version of LibTorch (version 
 Follow instructions at [Installing C++ distributions of PyTorch](https://pytorch.org/cppdocs/installing.html) to install LibTorch, and record the path.
 
 ## Building with cmake
+
 
 Currently this project just builds a few executables that run some test code.
 It does not build a library.
