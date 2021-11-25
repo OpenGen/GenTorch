@@ -1,4 +1,4 @@
-# libgen-experiment-sandbox
+# libgen-experimental-sandbox
 
 NOTE: The code in this repository is not currently intended for external users. It is a personal sandbox for experimenting with implementations of Gen in C++ (currently based on LibTorch, the PyTorch C++ library).
 
