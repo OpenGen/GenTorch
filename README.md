@@ -78,3 +78,7 @@ See `CMakeLists.txt` for the list of executables.
 [ ] Add an `Unfold` combinator and incremental computation for lists.
 
 [ ] Implement a multi-threaded sequential Monte Carlo inference library function that supports custom proposals, rejuvenation moves, and has approximately linear scaling behavior.
+
+### Milestone 4: Involutive MCMC
+
+[ ] Implement library function for involutive MCMC.
