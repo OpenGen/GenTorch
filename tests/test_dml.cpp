@@ -1,5 +1,7 @@
 #include <torch/torch.h>
 
+#include <catch2/catch_test_macros.hpp>
+
 #include "interfaces/address.h"
 #include "interfaces/trie.h"
 #include "dml/dml.h"
@@ -115,9 +117,20 @@ void multithreaded_generate() {
 }
 
 
-int main() {
+//int main() {
+//
+//    multithreaded_simulate();
+//    multithreaded_generate();
+//
+//}
 
-    multithreaded_simulate();
-    multithreaded_generate();
+int Factorial(int i) {
+    return i;
+}
 
+TEST_CASE( "Factorials are computed", "[factorial]" ) {
+REQUIRE( Factorial(1) == 1 );
+REQUIRE( Factorial(2) == 2 );
+REQUIRE( Factorial(3) == 6 );
+REQUIRE( Factorial(10) == 3628800 );
 }

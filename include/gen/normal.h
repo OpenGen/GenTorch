@@ -7,6 +7,8 @@
 
 #include "interfaces/trace.h"
 
+// TODO move implementation to cpp files
+
 namespace distributions::normal {
 
     using torch::Tensor;

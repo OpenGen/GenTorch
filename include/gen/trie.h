@@ -11,7 +11,9 @@
 
 #include <torch/torch.h>
 
-#include "interfaces/address.h"
+#include "address.h"
+
+// TODO move implementation to trie.cpp
 
 using std::shared_ptr;
 using std::make_shared;

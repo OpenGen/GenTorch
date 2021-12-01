@@ -3,7 +3,7 @@
 
 #include <any>
 
-#include "interfaces/trie.h"
+#include "trie.h"
 
 class Trace {
 public:
