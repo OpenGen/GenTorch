@@ -19,10 +19,10 @@ See the License for the specific language governing permissions and
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "interfaces/address.h"
-#include "interfaces/trie.h"
-#include "dml/dml.h"
-#include "distributions/normal.h"
+#include <gen/address.h>
+#include <gen/trie.h>
+#include <gen/dml.h>
+#include <gen/normal.h>
 
 using torch::Tensor;
 using torch::TensorOptions;

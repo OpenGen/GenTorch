@@ -15,8 +15,8 @@ See the License for the specific language governing permissions and
 
 // TODO turn into real test that is part of build
 
-#include "interfaces/address.h"
-#include "interfaces/trie.h"
+#include <gen/address.h>
+#include <gen/trie.h>
 
 #include <torch/torch.h>
 #include <cassert>
