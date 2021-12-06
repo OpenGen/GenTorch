@@ -8,7 +8,6 @@ set(HEADER_LIST
 add_library(gen_library
         address.cpp
         trie.cpp
-        dml.cpp
         normal.cpp
         ${HEADER_LIST})
 target_include_directories(gen_library PUBLIC ../include)

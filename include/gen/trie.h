@@ -99,13 +99,30 @@ public:
 
     [[nodiscard]] const std::any& get_value() const;
 
-    template <typename T>
-    void set_value(const T& value, bool overwrite=true);
-
     [[nodiscard]] const std::any& get_value(const Address& address) const;
 
     template <typename T>
-    void set_value(const Address& address, const T& value, bool overwrite=true);
+    void set_value(const T& value, bool overwrite=true) {
+        if (!overwrite && !empty()) {
+            throw TrieOverwriteError(Address{});
+        }
+        value_->emplace(value); // calls constructor of std::any with argument of type T
+        map_->clear();
+    }
+
+    template <typename T>
+    void set_value(const Address& address, const T& value, bool overwrite=true) {
+        if (address.empty()) {
+            set_value(value, overwrite);
+        } else {
+            Trie subtrie = get_subtrie(address, false);
+            if (!overwrite && !subtrie.empty()) {
+                throw TrieOverwriteError(address);
+            }
+            subtrie.set_value(value);
+            set_subtrie(address, subtrie);
+        }
+    }
 
     [[nodiscard]] bool has_subtrie(const Address& address) const;
 
@@ -146,3 +163,5 @@ protected:
 };
 
 std::ostream& operator<< (std::ostream& out, const Trie& trie);
+
+void dummy();

@@ -13,21 +13,23 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-// TODO turn into real test that is part of build
-
-#include <torch/torch.h>
-
-#include <catch2/catch_test_macros.hpp>
-
+#include <catch2/catch.hpp>
 #include <gen/address.h>
 #include <gen/trie.h>
 #include <gen/dml.h>
 #include <gen/normal.h>
 
+#include <cassert>
+#include <iostream>
+#include <memory>
+
+#include <torch/torch.h>
+
 using torch::Tensor;
 using torch::TensorOptions;
 using torch::tensor;
 using distributions::normal::Normal;
+
 
 bool tensor_scalar_bool(Tensor a) {
     if (a.ndimension() != 0) {
@@ -61,7 +63,6 @@ public:
     }
 };
 
-
 void do_simulate(int idx, int n, std::vector<double>& scores) {
     std::random_device rd{};
     std::mt19937 gen{rd()};
@@ -69,7 +70,7 @@ void do_simulate(int idx, int n, std::vector<double>& scores) {
     for (int j = 0; j < n; j++) {
         Tensor z = tensor(1.0, TensorOptions().dtype(torch::kFloat64));
         const auto model = Foo(z, 0);
-        const auto trace = model.simulate(gen);
+        const auto trace = model.simulate(gen, false);
         score += trace.get_score();
     }
     scores[idx] = score;
@@ -82,7 +83,7 @@ void do_generate(int idx, int n, std::vector<double>& scores, const Trie& constr
     for (int j = 0; j < n; j++) {
         Tensor z = tensor(1.0, TensorOptions().dtype(torch::kFloat64));
         const auto model = Foo(z, 0);
-        auto trace_and_log_weight = model.generate(gen, constraints);
+        auto trace_and_log_weight = model.generate(gen, constraints, false);
         auto trace = std::move(trace_and_log_weight.first);
         double log_weight = trace_and_log_weight.second;
         total_log_weight += log_weight;
@@ -90,7 +91,13 @@ void do_generate(int idx, int n, std::vector<double>& scores, const Trie& constr
     scores[idx] = total_log_weight;
 }
 
-void multithreaded_simulate() {
+
+TEST_CASE("dummy2", "[dummy]") {
+    std::cout << "inside test_dml..." << std::endl;
+    dummy();
+}
+
+TEST_CASE("multithreaded_simulate", "[multithreading, dml]") {
     using namespace std::chrono;
     auto start = high_resolution_clock::now();
     int n = 1000;
@@ -110,7 +117,7 @@ void multithreaded_simulate() {
 }
 
 
-void multithreaded_generate() {
+TEST_CASE("multithreaded_generate", "[multithreading, dml]") {
     Trie constraints {};
     constraints.set_value(Address{"z2"}, tensor(1.0));
     using namespace std::chrono;
@@ -131,23 +138,4 @@ void multithreaded_generate() {
     auto duration = duration_cast<microseconds>(stop - start);
     std::cout << duration.count()/1000000.0 << " seconds" << std::endl;
     std::cout << scores << std::endl;
-}
-
-
-//int main() {
-//
-//    multithreaded_simulate();
-//    multithreaded_generate();
-//
-//}
-
-int Factorial(int i) {
-    return i;
-}
-
-TEST_CASE( "Factorials are computed", "[factorial]" ) {
-REQUIRE( Factorial(1) == 1 );
-REQUIRE( Factorial(2) == 2 );
-REQUIRE( Factorial(3) == 6 );
-REQUIRE( Factorial(10) == 3628800 );
 }

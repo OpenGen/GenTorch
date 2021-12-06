@@ -74,15 +74,6 @@ const std::any& Trie::get_value() const {
     }
 }
 
-template <typename T>
-void Trie::set_value(const T& value, bool overwrite) {
-    if (!overwrite && !empty()) {
-        throw TrieOverwriteError(Address{});
-    }
-    value_->emplace(value); // calls constructor of std::any with argument of type T
-    map_->clear();
-}
-
 [[nodiscard]] const std::any& Trie::get_value(const Address& address) const {
     if (address.empty()) {
         return get_value();
@@ -92,20 +83,6 @@ void Trie::set_value(const T& value, bool overwrite) {
         } catch (const TrieKeyError&) {
             throw TrieKeyError(address);
         }
-    }
-}
-
-template <typename T>
-void Trie::set_value(const Address& address, const T& value, bool overwrite) {
-    if (address.empty()) {
-        set_value(value, overwrite);
-    } else {
-        Trie subtrie = get_subtrie(address, false);
-        if (!overwrite && !subtrie.empty()) {
-            throw TrieOverwriteError(address);
-        }
-        subtrie.set_value(value);
-        set_subtrie(address, subtrie);
     }
 }
 
@@ -249,4 +226,8 @@ std::ostream& Trie::pretty_print(std::ostream& out, int pre, const std::vector<i
 
 std::ostream& operator<< (std::ostream& out, const Trie& trie) {
     return trie.pretty_print(out, 0, {});
+}
+
+void dummy() {
+
 }

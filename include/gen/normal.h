@@ -102,14 +102,14 @@ namespace distributions::normal {
         Normal(const Tensor &mean, const Tensor &std) : dist_{mean, std} {};
 
         template<class Generator>
-        NormalTrace simulate(Generator &gen) const {
+        NormalTrace simulate(Generator &gen, bool prepare_for_gradients=false) const {
             Tensor value = dist_.sample(gen);
             return NormalTrace(NormalTrace(value, dist_));
         }
 
         template<class Generator>
         std::pair<NormalTrace, double>
-        generate(Generator &gen, const Trie& constraints) const {
+        generate(Generator &gen, const Trie& constraints, bool prepare_for_gradients=false) const {
             Tensor value;
             double log_weight;
             if (constraints.has_value()) {
