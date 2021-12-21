@@ -46,7 +46,7 @@ public:
 
     template <typename Tracer>
     return_type exec(Tracer& tracer) const {
-        const auto& [z, depth] = get_args();
+        const auto& [z, depth] = tracer.get_args();
         const auto x = tensor(0.0);
         const auto y = tensor(1.0) + z + x;
         const auto a = tensor(0.0);
@@ -101,7 +101,7 @@ TEST_CASE("multithreaded_simulate", "[multithreading, dml]") {
     using namespace std::chrono;
     auto start = high_resolution_clock::now();
     int n = 1000;
-    int n_threads = 4;
+    int n_threads = 1;
     std::vector<double> scores(n_threads, 0.0);
     std::vector<std::thread> threads;
     for (int i = 0; i < n_threads; i++) {
@@ -123,7 +123,7 @@ TEST_CASE("multithreaded_generate", "[multithreading, dml]") {
     using namespace std::chrono;
     auto start = high_resolution_clock::now();
     int n = 1000;
-    int n_threads = 4;
+    int n_threads = 1;
     std::vector<double> scores(n_threads, 0.0);
     std::vector<std::thread> threads;
     for (int i = 0; i < n_threads; i++) {
@@ -138,4 +138,38 @@ TEST_CASE("multithreaded_generate", "[multithreading, dml]") {
     auto duration = duration_cast<microseconds>(stop - start);
     std::cout << duration.count()/1000000.0 << " seconds" << std::endl;
     std::cout << scores << std::endl;
+}
+
+/* gradients test */
+
+
+class GradientsTestGenFn;
+
+class GradientsTestGenFn : public DMLGenFn<GradientsTestGenFn, std::vector<Tensor>, Tensor> {
+public:
+    explicit GradientsTestGenFn(Tensor x, Tensor y) : DMLGenFn<GradientsTestGenFn, args_type, return_type>({x, y}) {}
+
+    template <typename Tracer>
+    return_type exec(Tracer& tracer) const {
+        const std::vector<Tensor>& args = tracer.get_args();
+        const auto& x = args.at(0);
+        const auto& y = args.at(1);
+        // TODO add contributions from the callee
+        const Tensor z = tracer.call(Address{"z1"}, Normal(x + y, tensor(1.0)));
+        return z + x + (y * 2.0);
+    }
+};
+
+TEST_CASE("gradients with no parameters, no choices", "[gradients, dml]") {
+    std::random_device rd{};
+    std::mt19937 gen{rd()};
+    Tensor x = tensor(1.0);//, TensorOptions().dtype(torch::kFloat64));
+    Tensor y = tensor(1.0);//, TensorOptions().dtype(torch::kFloat64));
+    const auto model = GradientsTestGenFn(x, y);
+    auto [trace, log_weight] = model.generate(gen, Trie{}, true);
+    Tensor retval_grad = tensor(1.123);//, TensorOptions().dtype(torch::kFloat64));
+    auto arg_grads = any_cast<std::vector<Tensor>>(trace.gradients(retval_grad, 1.0));
+    REQUIRE(arg_grads.size() == 2);
+    REQUIRE(arg_grads.at(0).allclose(tensor(1.123)));
+    REQUIRE(arg_grads.at(1).allclose(tensor(1.123 * 2)));
 }

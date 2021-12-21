@@ -35,7 +35,7 @@ namespace distributions::normal {
     public:
 
         // NOTE: we should be able to pass-by-value without copying, since Tensor is liked a shared_ptr
-        NormalDist(const Tensor &mean, const Tensor &std) : mean_{mean}, std_{std} {};
+        NormalDist(Tensor mean, Tensor std) : mean_{mean}, std_{std} {};
 
         template<class Generator>
         Tensor sample(Generator &gen) const {
@@ -59,25 +59,32 @@ namespace distributions::normal {
             return {tensor(0.0), tensor(0.0), tensor(0.0)}; // TODO
         }
 
+        [[nodiscard]] Tensor get_mean() const { return mean_; }
+        [[nodiscard]] Tensor get_std() const { return std_; }
+
     private:
         const Tensor mean_;
         const Tensor std_;
     };
 
 
-    class NormalTrace : Trace {
+    class NormalTrace : public Trace {
     public:
         NormalTrace(const Tensor &value, const NormalDist &dist)
                 : value_{value}, dist_{dist}, score_(dist.log_density(value)) {}
 
-        [[nodiscard]] std::any get_return_value() const override { return make_any<Tensor>(value_); }
+        ~NormalTrace() override = default;
 
-        [[nodiscard]] std::vector<Tensor> gradients(const Tensor &ret_grad) const {
+        [[nodiscard]] std::any get_return_value() const override {
+            return make_any<Tensor>(value_);
+        }
+
+        [[nodiscard]] std::any gradients(std::any ret_grad, double scaler) override {
             auto grads = dist_.log_density_gradient(value_);
-            auto x_grad = std::get<0>(grads) + ret_grad;
+//            auto x_grad = std::get<0>(grads) + ret_grad;
             auto mean_grad = std::get<1>(grads);
             auto std_grad = std::get<2>(grads);
-            return {x_grad, mean_grad, std_grad};
+            return pair<Tensor,Tensor>{mean_grad, std_grad};
         }
 
         [[nodiscard]] double get_score() const override { return score_; }
@@ -98,8 +105,13 @@ namespace distributions::normal {
     public:
         typedef Tensor return_type;
         typedef NormalTrace trace_type;
+        typedef pair<Tensor,Tensor> args_type;
 
         Normal(const Tensor &mean, const Tensor &std) : dist_{mean, std} {};
+
+        args_type get_args() const {
+            return {dist_.get_mean(), dist_.get_std()};
+        }
 
         template<class Generator>
         NormalTrace simulate(Generator &gen, bool prepare_for_gradients=false) const {

@@ -51,9 +51,6 @@ add_subdirectory(src)
 # The executable code is here
 add_subdirectory(apps)
 
-# The executable code is here
-add_subdirectory(custom_node)
-
 # Testing only available if this is the main app
 # Emergency override MODERN_CMAKE_BUILD_TESTING provided as well
 if((CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME OR GEN_BUILD_TESTING)

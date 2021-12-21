@@ -102,25 +102,27 @@ public:
     [[nodiscard]] const std::any& get_value(const Address& address) const;
 
     template <typename T>
-    void set_value(const T& value, bool overwrite=true) {
+    std::any& set_value(const T& value, bool overwrite=true) {
         if (!overwrite && !empty()) {
             throw TrieOverwriteError(Address{});
         }
         value_->emplace(value); // calls constructor of std::any with argument of type T
         map_->clear();
+        return value_->value(); // TODO checkme
     }
 
     template <typename T>
-    void set_value(const Address& address, const T& value, bool overwrite=true) {
+    T& set_value(const Address& address, const T& value, bool overwrite=true) {
         if (address.empty()) {
-            set_value(value, overwrite);
+            return set_value(value, overwrite);
         } else {
             Trie subtrie = get_subtrie(address, false);
             if (!overwrite && !subtrie.empty()) {
                 throw TrieOverwriteError(address);
             }
-            subtrie.set_value(value);
+            T& value_ref = subtrie.set_value(value);
             set_subtrie(address, subtrie);
+            return value_ref;
         }
     }
 
