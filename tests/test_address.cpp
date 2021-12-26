@@ -107,12 +107,61 @@ TEST_CASE( "set_subtrie", "[choice trie]" ) {
     Trie trie_with_value { };
     trie_with_value.set_value(tensor(1.123));
     Trie super_trie { };
-    super_trie.set_subtrie(Address{"a", "b", "c", "d", "e"}, trie_with_value);
+    super_trie.set_subtrie(Address{"a", "b", "c", "d", "e"}, std::move(trie_with_value));
     std::cout << super_trie << std::endl;
-    trie_with_value.set_value(tensor(1, TensorOptions().dtype(torch::ScalarType::Bool)));
-    super_trie.set_subtrie(Address{"x", "y", "z"}, trie_with_value);
-    std::cout << trie_with_value << std::endl;
+
+    Trie trie_with_value_2 { };
+    trie_with_value_2.set_value(tensor(1.123));
+    trie_with_value_2.set_value(tensor(1, TensorOptions().dtype(torch::ScalarType::Bool)));
+    super_trie.set_subtrie(Address{"x", "y", "z"}, std::move(trie_with_value_2));
+    std::cout << trie_with_value_2 << std::endl;
     std::cout << super_trie << std::endl;
     REQUIRE(!super_trie.has_value());
     walk_choice_trie(super_trie, 0);
+}
+
+TEST_CASE("set_value", "[choice trie]") {
+    Trie t {};
+    string value {"asdf"};
+    string& set_value_ref = t.set_value(value);
+    std::any& stored_value_any_ref = t.get_value();
+    string& stored_string_ref = *std::any_cast<string>(&stored_value_any_ref);
+    stored_string_ref.replace(0, 2, "zz");
+    assert(value == "asdf");
+    assert(std::any_cast<string>(t.get_value()) == "zzdf");
+
+    set_value_ref.replace(0, 2, "xx");
+    assert(value == "asdf");
+    assert(std::any_cast<string>(t.get_value()) == "xxdf");
+}
+
+class Base {
+public:
+    virtual int print_my_val() {
+        std::cout << 2 << std::endl;
+        return 2;
+    }
+    virtual double print_my_val_pure() const = 0;
+};
+
+class Derived : public Base {
+public:
+    explicit Derived(double my_val) : my_val_{my_val} {}
+    double print_my_val_pure() const override {
+        std::cout << my_val_ << std::endl;
+        return my_val_;
+    }
+private:
+    double my_val_;
+};
+
+TEST_CASE("set_value virtual base class", "[trie]") {
+    Trie t {};
+    Address a {"z1"};
+//    Address a {};
+    Derived object {1.123};
+    Derived& object_ref = t.set_value(a, object, false);
+//    Derived& object_ref = t.set_value(object, false);
+    assert(object_ref.print_my_val() == 2);
+    assert(object_ref.print_my_val_pure() == 1.123);
 }

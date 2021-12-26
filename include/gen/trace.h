@@ -23,7 +23,7 @@ See the License for the specific language governing permissions and
 class Trace {
 public:
 
-    virtual ~Trace() {  };
+    virtual ~Trace() = default;
 
     /**
      * @return the choice trie.

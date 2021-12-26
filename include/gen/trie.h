@@ -97,22 +97,23 @@ public:
         return value_->has_value();
     }
 
-    [[nodiscard]] const std::any& get_value() const;
+    [[nodiscard]] std::any& get_value() const;
 
-    [[nodiscard]] const std::any& get_value(const Address& address) const;
+    [[nodiscard]] std::any& get_value(const Address& address) const;
 
     template <typename T>
-    std::any& set_value(const T& value, bool overwrite=true) {
+    T& set_value(T value, bool overwrite=true) {
         if (!overwrite && !empty()) {
             throw TrieOverwriteError(Address{});
         }
         value_->emplace(value); // calls constructor of std::any with argument of type T
         map_->clear();
-        return value_->value(); // TODO checkme
+        T* value_ptr = std::any_cast<T>(&value_->value());
+        return *value_ptr;
     }
 
     template <typename T>
-    T& set_value(const Address& address, const T& value, bool overwrite=true) {
+    T& set_value(const Address& address, T value, bool overwrite=true) {
         if (address.empty()) {
             return set_value(value, overwrite);
         } else {
@@ -120,8 +121,8 @@ public:
             if (!overwrite && !subtrie.empty()) {
                 throw TrieOverwriteError(address);
             }
-            T& value_ref = subtrie.set_value(value);
-            set_subtrie(address, subtrie);
+            Trie& subtrie_ref = set_subtrie(address, std::move(subtrie));
+            T& value_ref = subtrie_ref.set_value(value);
             return value_ref;
         }
     }
@@ -130,7 +131,7 @@ public:
 
     [[nodiscard]] Trie get_subtrie(const Address& address, bool strict=true) const;
 
-    void set_subtrie(const Address& address, const Trie& trie, bool overwrite=true);
+    Trie& set_subtrie(const Address& address, Trie&& trie, bool overwrite=true);
 
     [[nodiscard]] const unordered_map<string,Trie>& subtries() const { return *map_; }
 
@@ -142,7 +143,7 @@ public:
     // TODO: clone()
 
 protected:
-    shared_ptr<optional<std::any>> value_ { make_shared<optional<std::any>>(std::nullopt) };
+    shared_ptr<optional<std::any>> value_ { make_shared<optional<std::any>>() };
     shared_ptr<unordered_map<string,Trie>> map_ { make_shared<unordered_map<string,Trie>>() };
 
     static const inline std::string VERT = "\u2502";

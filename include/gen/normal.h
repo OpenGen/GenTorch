@@ -34,7 +34,6 @@ namespace distributions::normal {
     class NormalDist {
     public:
 
-        // NOTE: we should be able to pass-by-value without copying, since Tensor is liked a shared_ptr
         NormalDist(Tensor mean, Tensor std) : mean_{mean}, std_{std} {};
 
         template<class Generator>
@@ -70,13 +69,16 @@ namespace distributions::normal {
 
     class NormalTrace : public Trace {
     public:
-        NormalTrace(const Tensor &value, const NormalDist &dist)
-                : value_{value}, dist_{dist}, score_(dist.log_density(value)) {}
+        typedef Tensor return_type;
+        typedef pair<Tensor,Tensor> args_type;
+
+        NormalTrace(Tensor&& value, const NormalDist &dist)
+                : value_{value}, dist_{dist}, score_(dist.log_density(value)), my_val_{1.123} {}
 
         ~NormalTrace() override = default;
 
         [[nodiscard]] std::any get_return_value() const override {
-            return make_any<Tensor>(value_);
+            return make_any<Tensor>(value_); // calls copy constructor for Tensor
         }
 
         [[nodiscard]] std::any gradients(std::any ret_grad, double scaler) override {
@@ -99,6 +101,7 @@ namespace distributions::normal {
         const NormalDist dist_;
         const Tensor value_;
         double score_;
+        double my_val_;
     };
 
     class Normal {
@@ -107,7 +110,7 @@ namespace distributions::normal {
         typedef NormalTrace trace_type;
         typedef pair<Tensor,Tensor> args_type;
 
-        Normal(const Tensor &mean, const Tensor &std) : dist_{mean, std} {};
+        Normal(Tensor mean, Tensor std) : dist_{mean, std} {};
 
         args_type get_args() const {
             return {dist_.get_mean(), dist_.get_std()};
@@ -116,7 +119,7 @@ namespace distributions::normal {
         template<class Generator>
         NormalTrace simulate(Generator &gen, bool prepare_for_gradients=false) const {
             Tensor value = dist_.sample(gen);
-            return NormalTrace(NormalTrace(value, dist_));
+            return {std::move(value), dist_};
         }
 
         template<class Generator>
@@ -133,7 +136,7 @@ namespace distributions::normal {
             } else {
                 throw std::domain_error("expected primitive or empty choice dict");
             }
-            return {NormalTrace(value, dist_), log_weight};
+            return {NormalTrace(std::move(value), dist_), log_weight};
         }
 
     private:

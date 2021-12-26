@@ -116,28 +116,28 @@ pair<const args_type&, optional<shared_ptr<const args_type>>> maybe_track_args(c
 
 template <typename args_type, typename return_value_type>
 struct MyGradNode : public Node {
-    explicit MyGradNode(Trace* subtrace, const double& scaler_reference, edge_list&& next_edges)
+    explicit MyGradNode(Trace& subtrace, const double& scaler_reference, edge_list&& next_edges)
             : Node(std::move(next_edges)), subtrace_{subtrace}, scaler_reference_{scaler_reference} { };
     ~MyGradNode() override = default;
     variable_list apply(variable_list&& unrolled_return_value_grad) override {
         variable_list unrolled_args_grad;
-        auto return_value = any_cast<return_value_type>(subtrace_->get_return_value());
+        auto return_value = any_cast<return_value_type>(subtrace_.get_return_value());
         return_value_type return_value_grad = roll(unrolled_return_value_grad, return_value);
-        auto args_grad = any_cast<args_type>(subtrace_->gradients(return_value_grad, scaler_reference_));
+        auto args_grad = any_cast<args_type>(subtrace_.gradients(return_value_grad, scaler_reference_));
         return unroll(args_grad);
     }
 private:
-    Trace* subtrace_;
+    Trace& subtrace_;
     const double& scaler_reference_;
 };
 
 template <typename args_type, typename return_type>
 struct MyNode : public Node {
-    explicit MyNode(Trace* subtrace, const double& scaler_reference)
+    explicit MyNode(Trace& subtrace, const double& scaler_reference)
         : subtrace_{subtrace}, scaler_reference_{scaler_reference} {}
     ~MyNode() override = default;
     variable_list apply(variable_list&& inputs) override {
-        std::any value_any = subtrace_->get_return_value();
+        std::any value_any = subtrace_.get_return_value();
         auto value = any_cast<return_type>(value_any);
         vector<Tensor> unrolled = unroll(value);
         return torch::autograd::wrap_outputs(inputs, std::move(unrolled), [&](edge_list&& next_edges) {
@@ -145,7 +145,7 @@ struct MyNode : public Node {
         });
     }
 private:
-    Trace* subtrace_;
+    Trace& subtrace_;
     const double& scaler_reference_;
 };
 
@@ -195,7 +195,7 @@ public:
 
     [[nodiscard]] double get_score() const override { return score_; }
 
-    [[nodiscard]] std::any get_return_value() const {
+    [[nodiscard]] std::any get_return_value() const override {
         if (!maybe_value_.has_value()) {
             throw std::runtime_error("set_value was never called");
         }
@@ -203,9 +203,10 @@ public:
     }
 
     template <typename SubtraceType>
-    Trace& add_subtrace(const Address& address, SubtraceType subtrace) {
+    SubtraceType& add_subtrace(const Address& address, SubtraceType subtrace) {
         score_ += subtrace.get_score();
         try {
+            // TODO: fix copy
             return subtraces_->set_value(address, subtrace, false);
         } catch (const TrieOverwriteError&) {
             throw DMLAlreadyVisitedError(address);
@@ -251,7 +252,6 @@ public:
 
     double& get_scaler_reference() { return scaler_; }
 
-    // NOTE: for now, assumes that the return value is a Tensor and the arguments is a vector of Tensors
     std::any gradients(std::any retval_grad_any, double scaler) override {
         scaler_ = scaler; // NOTE: not threadsafe
         // TODO add all parameters as inputs; we can require users to register their torch modules for now..
@@ -259,18 +259,14 @@ public:
             throw std::logic_error("not ready for gradients");
         }
         return_type retval = any_cast<return_type>(get_return_value());
-//        if (assert_retval_grad_ && !retval.requires_grad()) {
-//            // TODO use a different error
-//            throw std::logic_error("return value did not require grad");
-//        }
-        std::vector<Tensor> args_unrolled = unroll(get_args());
         return_type retval_grad = std::any_cast<return_type>(retval_grad_any);
-        auto args_grad_unrolled = torch::autograd::grad({retval}, args_unrolled, {retval_grad});
+        vector<Tensor> retval_unrolled = unroll(retval);
+        vector<Tensor> retval_grad_unrolled = unroll(retval_grad);
+        vector<Tensor> args_unrolled = unroll(get_args());
+        vector<Tensor> args_grad_unrolled = torch::autograd::grad(retval_unrolled, args_unrolled, retval_grad_unrolled);
         args_type args_grad = roll(args_grad_unrolled, get_args());
-        return args_grad; // TODO detach
+        return args_grad; // TODO detach?
     }
-
-
 
 private:
     pair<const args_type&, optional<shared_ptr<const args_type>>> args_;
@@ -297,20 +293,18 @@ public:
             gen_{gen},
             trace_{args, prepare_for_gradients, assert_retval_grad},
             prepare_for_gradients_{prepare_for_gradients},
-            scaler_reference_{trace_.get_scaler_reference()}{ }
+            scaler_reference_{trace_.get_scaler_reference()} {}
 
     const args_type& get_args() const { return trace_.get_args(); }
 
     template <typename CalleeType>
     typename CalleeType::return_type
-    call(const Address& address, const CalleeType& gen_fn_with_args) {
+    call(Address&& address, CalleeType&& gen_fn_with_args) {
         assert(!finished_); // if this assertion fails, it is a bug in DML not user code
-        typename CalleeType::trace_type subtrace = gen_fn_with_args.simulate(gen_, prepare_for_gradients_);
+        Trace& subtrace = trace_.add_subtrace(address, gen_fn_with_args.simulate(gen_, prepare_for_gradients_));
         const auto& value = any_cast<typename CalleeType::return_type>(subtrace.get_return_value());
-        Trace& subtrace_ptr = trace_.add_subtrace(address, std::move(subtrace));
-        // for gradients
-        auto node = MyNode<typename CalleeType::args_type, typename CalleeType::return_type>(subtrace_ptr, scaler_reference_);
-        // NOTE: gen_fn_with_args.get_args() returns args that are tracked
+        auto node = MyNode<typename CalleeType::args_type, typename CalleeType::return_type>(subtrace, scaler_reference_);
+        // NOTE: gen_fn_with_args.get_args() returns args that are tracked as part of the autograd graph
         auto tracked_value_unrolled = node(unroll(gen_fn_with_args.get_args()));
         typename CalleeType::return_type tracked_value = roll(tracked_value_unrolled, value);
         return tracked_value;
@@ -346,23 +340,26 @@ public:
             trace_{args, prepare_for_gradients, assert_retval_grad},
             log_weight_(0.0),
             constraints_(constraints),
-            prepare_for_gradients_{prepare_for_gradients} {}
+            prepare_for_gradients_{prepare_for_gradients},
+            scaler_reference_{trace_.get_scaler_reference()} {}
 
     const args_type& get_args() const { return trace_.get_args(); }
 
     template <typename CalleeType>
     typename CalleeType::return_type
-    call(const Address& address, const CalleeType& gen_fn_with_args) {
+    call(Address&& address, CalleeType&& gen_fn_with_args) {
         assert(!finished_); // if this assertion fails, it is a bug in DML not user code
         Trie sub_constraints { constraints_.get_subtrie(address, false) };
         auto subtrace_and_log_weight = gen_fn_with_args.generate(gen_, sub_constraints, prepare_for_gradients_);
-        typename CalleeType::trace_type subtrace = std::move(subtrace_and_log_weight.first);
-        double log_weight_increment = subtrace_and_log_weight.second;
-        log_weight_ += log_weight_increment;
-        const auto value = any_cast<typename CalleeType::return_type>(subtrace.get_return_value());
-        trace_.add_subtrace(address, std::move(subtrace));
-        return value;
+        Trace& subtrace = trace_.add_subtrace(address, std::move(subtrace_and_log_weight.first));
+        const auto& value = any_cast<typename CalleeType::return_type>(subtrace.get_return_value());
+        auto node = MyNode<typename CalleeType::args_type, typename CalleeType::return_type>(subtrace, scaler_reference_);
+        // NOTE: gen_fn_with_args.get_args() returns args that are tracked as part of the autograd graph
+        auto tracked_value_unrolled = node(unroll(gen_fn_with_args.get_args()));
+        typename CalleeType::return_type tracked_value = roll(tracked_value_unrolled, value);
+        return tracked_value;
     }
+
 
     std::pair<DMLTrace<Model>,double> finish(typename Model::return_type value) {
         finished_ = true;
@@ -377,6 +374,7 @@ private:
     DMLTrace<Model> trace_;
     const Trie& constraints_;
     bool prepare_for_gradients_;
+    double& scaler_reference_;
 };
 
 // *******************
@@ -392,7 +390,7 @@ public:
 
     template <typename CalleeType>
     typename CalleeType::return_type
-    call(const Address& address, const CalleeType& gen_fn_with_args) {
+    call(Address&& address, CalleeType&& gen_fn_with_args) {
         assert(!finished_); // if this assertion fails, it is a bug in DML not user code
         Trie sub_constraints { constraints_.get_subtrie(address, false) };
         typename CalleeType::trace_type subtrace;
