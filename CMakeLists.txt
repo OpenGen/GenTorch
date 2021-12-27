@@ -49,7 +49,7 @@ find_package(Torch REQUIRED)
 add_subdirectory(src)
 
 # The executable code is here
-add_subdirectory(apps)
+#add_subdirectory(apps)
 
 # The executable code is here
 add_subdirectory(custom_node)

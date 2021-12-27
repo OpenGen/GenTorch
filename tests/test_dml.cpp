@@ -29,6 +29,7 @@ using torch::Tensor;
 using torch::TensorOptions;
 using torch::tensor;
 using distributions::normal::Normal;
+using distributions::normal::NormalDist;
 
 
 bool tensor_scalar_bool(Tensor a) {
@@ -154,22 +155,29 @@ public:
         const std::vector<Tensor>& args = tracer.get_args();
         const auto& x = args.at(0);
         const auto& y = args.at(1);
-        // TODO add contributions from the callee
-        const Tensor z = tracer.call(Address{"z1"}, Normal(x + y, tensor(1.0)));
+        const Tensor z = tracer.call({"z1"}, Normal(x + y, tensor(1.0)));
         return z + x + (y * 2.0);
     }
 };
 
-TEST_CASE("gradients with no parameters, no choices", "[gradients, dml]") {
+TEST_CASE("gradients with no parameters", "[gradients, dml]") {
     std::random_device rd{};
     std::mt19937 gen{rd()};
-    Tensor x = tensor(1.0);//, TensorOptions().dtype(torch::kFloat64));
-    Tensor y = tensor(1.0);//, TensorOptions().dtype(torch::kFloat64));
+    Tensor x = tensor(1.0);
+    Tensor y = tensor(1.0);
     const auto model = GradientsTestGenFn(x, y);
-    auto [trace, log_weight] = model.generate(gen, Trie{}, true);
-    Tensor retval_grad = tensor(1.123);//, TensorOptions().dtype(torch::kFloat64));
+    Trie constraints {};
+    Tensor z1 = tensor(1.0);
+    constraints.set_value({"z1"}, z1);
+    auto [trace, log_weight] = model.generate(gen, constraints, true);
+    Tensor retval_grad = tensor(1.123);
     auto arg_grads = any_cast<std::vector<Tensor>>(trace.gradients(retval_grad, 1.0));
+    std::cout << std::endl;
     REQUIRE(arg_grads.size() == 2);
-    REQUIRE(arg_grads.at(0).allclose(tensor(1.123)));
-    REQUIRE(arg_grads.at(1).allclose(tensor(1.123 * 2)));
+    NormalDist dist {x + y, tensor(1.0)};
+    auto logpdf_grad = dist.log_density_gradient(z1);
+    Tensor expected_x_grad = tensor(1.123) + std::get<1>(logpdf_grad);
+    Tensor expected_y_grad = tensor(1.123 * 2) + std::get<1>(logpdf_grad);
+    REQUIRE(arg_grads.at(0).allclose(expected_x_grad));
+    REQUIRE(arg_grads.at(1).allclose(expected_y_grad));
 }

@@ -55,7 +55,11 @@ namespace distributions::normal {
         }
 
         [[nodiscard]] std::tuple<Tensor, Tensor, Tensor> log_density_gradient(const Tensor &x) const {
-            return {tensor(0.0), tensor(0.0), tensor(0.0)}; // TODO
+            Tensor z = (x - mean_) / std_;
+            Tensor x_grad = -z / std_;
+            Tensor mu_grad = -x_grad;
+            Tensor std_grad = -std_.reciprocal() + (z * z / std_);
+            return {x_grad, mu_grad, std_grad};
         }
 
         [[nodiscard]] Tensor get_mean() const { return mean_; }
@@ -73,7 +77,7 @@ namespace distributions::normal {
         typedef pair<Tensor,Tensor> args_type;
 
         NormalTrace(Tensor&& value, const NormalDist &dist)
-                : value_{value}, dist_{dist}, score_(dist.log_density(value)), my_val_{1.123} {}
+                : value_{value}, dist_{dist}, score_(dist.log_density(value)) {}
 
         ~NormalTrace() override = default;
 
@@ -101,7 +105,6 @@ namespace distributions::normal {
         const NormalDist dist_;
         const Tensor value_;
         double score_;
-        double my_val_;
     };
 
     class Normal {
@@ -110,10 +113,11 @@ namespace distributions::normal {
         typedef NormalTrace trace_type;
         typedef pair<Tensor,Tensor> args_type;
 
-        Normal(Tensor mean, Tensor std) : dist_{mean, std} {};
+        Normal(Tensor mean, Tensor std)
+            : mean_tracked_{mean}, std_tracked_{std}, dist_{mean.detach(), std.detach()} {};
 
-        args_type get_args() const {
-            return {dist_.get_mean(), dist_.get_std()};
+        [[nodiscard]] args_type get_args() const {
+            return {mean_tracked_, std_tracked_};
         }
 
         template<class Generator>
@@ -140,6 +144,8 @@ namespace distributions::normal {
         }
 
     private:
+        Tensor mean_tracked_;
+        Tensor std_tracked_;
         const NormalDist dist_;
     };
 

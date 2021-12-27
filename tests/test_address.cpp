@@ -33,10 +33,10 @@ TEST_CASE("dummy", "[dummy]") {
     dummy();
 }
 
-TEST_CASE( "empty address", "[choice addresses]" ) {
-    Address empty_addr; // empty address
-    REQUIRE(empty_addr.empty());
-}
+//TEST_CASE( "empty address", "[choice addresses]" ) {
+//    Address empty_addr; // empty address
+//    REQUIRE(empty_addr.empty());
+//}
 
 TEST_CASE( "list constructed address", "[choice addresses]" ) {
     Address a {"x" };
@@ -127,12 +127,12 @@ TEST_CASE("set_value", "[choice trie]") {
     std::any& stored_value_any_ref = t.get_value();
     string& stored_string_ref = *std::any_cast<string>(&stored_value_any_ref);
     stored_string_ref.replace(0, 2, "zz");
-    assert(value == "asdf");
-    assert(std::any_cast<string>(t.get_value()) == "zzdf");
+    REQUIRE(value == "asdf");
+    REQUIRE(std::any_cast<string>(t.get_value()) == "zzdf");
 
     set_value_ref.replace(0, 2, "xx");
-    assert(value == "asdf");
-    assert(std::any_cast<string>(t.get_value()) == "xxdf");
+    REQUIRE(value == "asdf");
+    REQUIRE(std::any_cast<string>(t.get_value()) == "xxdf");
 }
 
 class Base {
@@ -154,14 +154,3 @@ public:
 private:
     double my_val_;
 };
-
-TEST_CASE("set_value virtual base class", "[trie]") {
-    Trie t {};
-    Address a {"z1"};
-//    Address a {};
-    Derived object {1.123};
-    Derived& object_ref = t.set_value(a, object, false);
-//    Derived& object_ref = t.set_value(object, false);
-    assert(object_ref.print_my_val() == 2);
-    assert(object_ref.print_my_val_pure() == 1.123);
-}

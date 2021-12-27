@@ -17,6 +17,7 @@ See the License for the specific language governing permissions and
 
 #include <gen/address.h>
 #include <gen/trie.h>
+#include <gen/conversions.h>
 #include <gen/trace.h>
 
 #include <any>
@@ -27,10 +28,10 @@ See the License for the specific language governing permissions and
 #include <torch/csrc/autograd/functions/utils.h>
 
 using std::any_cast;
-using std::vector;
+using std::vector, std::pair;
 using std::cout, std::endl;
-using std::shared_ptr, std::unique_ptr;
-using std::optional, std::pair;
+using std::shared_ptr, std::unique_ptr, std::make_shared;
+using std::optional, std::make_optional;
 using torch::Tensor;
 
 using torch::autograd::AutogradContext;
@@ -45,64 +46,6 @@ using torch::autograd::edge_list;
 // ****************************************
 
 
-std::vector<Tensor> unroll(const Tensor& args) {
-    return {args};
-}
-
-std::vector<Tensor> unroll(const std::vector<Tensor>& args) {
-    return args;
-}
-
-std::vector<Tensor> unroll(const std::pair<Tensor, int>& args) {
-    std::vector<Tensor> tensors {args.first};
-    return std::move(tensors);
-}
-
-std::vector<Tensor> unroll(const std::pair<Tensor, Tensor>& args) {
-    std::vector<Tensor> tensors {args.first, args.second};
-    return std::move(tensors);
-}
-
-Tensor roll(const std::vector<Tensor>& rolled, const Tensor& value) {
-    assert(rolled.size() == 1);
-    return rolled[0];
-}
-
-std::vector<Tensor> roll(const std::vector<Tensor>& rolled, const std::vector<Tensor>& value) {
-    return rolled;
-}
-
-std::pair<Tensor, int> roll(const std::vector<Tensor>& rolled, const std::pair<Tensor, int>& value) {
-    assert(rolled.size() == 1);
-    return {rolled[0], value.second};
-}
-std::pair<Tensor, Tensor> roll(const std::vector<Tensor>& rolled, const std::pair<Tensor, Tensor>& value) {
-    assert(rolled.size() == 2);
-    return {rolled[0], rolled[1]};
-}
-
-std::vector<Tensor> detach_clone_and_track(const std::vector<Tensor>& args) {
-    std::vector<Tensor> args_copy;
-    for (auto& t : args) {
-        args_copy.emplace_back(t.detach().clone().set_requires_grad(true));
-    }
-    return args_copy; // copy elision
-}
-
-std::pair<Tensor, int> detach_clone_and_track(const std::pair<Tensor, int>& args) {
-    return {args.first.detach().clone().set_requires_grad(true), args.second};
-}
-
-template <typename args_type>
-pair<const args_type&, optional<shared_ptr<const args_type>>> maybe_track_args(const args_type& args,
-                                                                               bool prepare_for_gradients) {
-    if (prepare_for_gradients) {
-        auto tracked_args_ptr = std::make_unique<const args_type>(detach_clone_and_track(args));
-        return {*tracked_args_ptr, std::make_optional<shared_ptr<const args_type>>(std::move(tracked_args_ptr))};
-    } else {
-        return {args, std::make_optional<shared_ptr<const args_type>>()};
-    }
-}
 
 // TODO add other overloaded versions of these functions for other compound data types
 
@@ -124,6 +67,7 @@ struct MyGradNode : public Node {
         auto return_value = any_cast<return_value_type>(subtrace_.get_return_value());
         return_value_type return_value_grad = roll(unrolled_return_value_grad, return_value);
         auto args_grad = any_cast<args_type>(subtrace_.gradients(return_value_grad, scaler_reference_));
+        std::cout << "inside MyGradNode" << std::endl;
         return unroll(args_grad);
     }
 private:
@@ -167,6 +111,27 @@ public:
 private:
     const std::string msg_;
 };
+
+template <typename T>
+T detach_clone_and_track(const T& args) {
+    vector<Tensor> args_unrolled = unroll(args);
+    vector<Tensor> args_unrolled_copy;
+    for (auto& t : args_unrolled) {
+        args_unrolled_copy.emplace_back(t.detach().clone().set_requires_grad(true));
+    }
+    return roll(args_unrolled_copy, args); // copy elision
+}
+
+template <typename args_type>
+pair<const args_type&, optional<shared_ptr<const args_type>>> maybe_track_args(const args_type& args,
+                                                                               bool prepare_for_gradients) {
+    if (prepare_for_gradients) {
+        auto tracked_args_ptr = make_unique<const args_type>(detach_clone_and_track(args));
+        return {*tracked_args_ptr, make_optional<shared_ptr<const args_type>>(move(tracked_args_ptr))};
+    } else {
+        return {args, make_optional<shared_ptr<const args_type>>()};
+    }
+}
 
 template <typename Generator, typename Model>
 class DMLUpdateTracer;
