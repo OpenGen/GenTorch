@@ -55,7 +55,10 @@ See `CMakeLists.txt` for the list of executables.
 
 [~] Implement an example of multi-threaded SGD-based training of a `torch::nn::Module` that exhibits good near-linear scaling up to 32 cores on a c6i.metal instance.
 
-[ ] Implement `gradients` for DML, with support for separate gradient accumulators per-thread and aggregation across threads, but only for generative functions whose return value is a `torch::Tensor` and whose arguments are a tuple of `torch::Tensor`s.
+[x] Implement threadsafe `gradients` for DML with support for compound data
+types in arguments and return values, but not support for parameter gradients
+
+[ ] Add support for parameter gradients to the DML gradients implementation
 
 [ ] Add example of running `gradients` on a generative function that calls a `torch::nn::Module` that is defined in C++ with a custom gradient.
 
@@ -64,8 +67,6 @@ See `CMakeLists.txt` for the list of executables.
 [ ] Add some abstraction to make it easy to add a new primitive distribution.
 
 [ ] Implement `Normal` and `Bernoulli` and `Discrete` distributions based on that abstraction.
-
-[ ] Add support for using `gradients` with generative function that have return values and arguments that are not only `torch::Tensors`, but include tuples, lists, and dictionaries, and compositions of these. (This will likely involve defining Gen-specific compound data types). Also add support for registering new user-defined data types that also inter-operate cleanly with `gradients`.
 
 [ ] Implement proper tests and continous integration.
 
