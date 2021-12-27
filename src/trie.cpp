@@ -66,7 +66,7 @@ void pretty_print_value(std::ostream& out, const std::any& value) {
     }
 }
 
-const std::any& Trie::get_value() const {
+std::any& Trie::get_value() const {
     try {
         return value_->value();
     } catch (const std::bad_optional_access&) {
@@ -74,7 +74,7 @@ const std::any& Trie::get_value() const {
     }
 }
 
-[[nodiscard]] const std::any& Trie::get_value(const Address& address) const {
+[[nodiscard]] std::any& Trie::get_value(const Address& address) const {
     if (address.empty()) {
         return get_value();
     } else {
@@ -129,7 +129,7 @@ const std::any& Trie::get_value() const {
     }
 }
 
-void Trie::set_subtrie(const Address& address, const Trie& trie, bool overwrite) {
+Trie& Trie::set_subtrie(const Address& address, Trie&& trie, bool overwrite) {
     if (address.empty()) {
         if (!overwrite && !empty()) {
             throw TrieOverwriteError(address);
@@ -139,17 +139,22 @@ void Trie::set_subtrie(const Address& address, const Trie& trie, bool overwrite)
         } else {
             map_ = trie.map_; // copy the shared pointer
         }
+        return *this;
     } else {
         value_->reset(); // delete choice value, if there is one
         auto iter = map_->find(address.first());
-        Trie rest_subtrie {};
+        Trie* rest_subtrie_ptr = nullptr;
         if (iter == map_->end()) {
-            map_->insert({address.first(), rest_subtrie});
+            // there is no subtrie at this key, add it
+            Trie rest_subtrie {};
+            map_->insert({address.first(), std::move(rest_subtrie)});
+            rest_subtrie_ptr = &((*map_)[address.first()]);
         } else {
-            rest_subtrie = iter->second; // copy assignment
+            // there is a subtrie at this key
+            rest_subtrie_ptr = &iter->second; // copy assignment
         }
         try {
-            rest_subtrie.set_subtrie(address.rest(), trie, overwrite);
+            return rest_subtrie_ptr->set_subtrie(address.rest(), std::move(trie), overwrite);
         } catch (const TrieOverwriteError&) {
             throw TrieOverwriteError(address);
         }

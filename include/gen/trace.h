@@ -22,6 +22,9 @@ See the License for the specific language governing permissions and
 
 class Trace {
 public:
+
+    virtual ~Trace() = default;
+
     /**
      * @return the choice trie.
      */
@@ -36,4 +39,9 @@ public:
      * @return the return value of the generative function.
      */
     [[nodiscard]] virtual std::any get_return_value() const = 0;
+
+
+    // the implementation will need to any_cast the return value gradient
+    virtual std::any gradients(std::any retval_grad, double scaler) = 0;
+
 };

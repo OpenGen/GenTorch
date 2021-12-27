@@ -110,6 +110,22 @@ These functions should accept the parameter store that they should read the para
 
 ### Gradient member function for DML
 
+DML uses LibTorch's autograd implementation.
+To do this, we need to insert a special node into the computation graph for each generative function call that the DML function makes.
+We cannot simply extend `torch::autograd::Function` like you would normally do when defining a new node type since the number of input tensors is part of the static type signature of the `forward` member function.
+We require the number of input tensors to vary at run time, because the arguments to generative functions can be compound data structures that contain a dynamic number of tensors.
+Therefore, we add nodes to the LibTorch computation graph using the lower-level `torch::autograd::Node` class.
+Specifically, we create a class for a `Node` that represents the forward computation, a class for a `Node` that represents the gradient (backward) computation, and the forward computation establishes the edges in the computation graph that are later used in the backward pass.
+
+Some relevant references:
+
+- http://blog.ezyang.com/2019/05/pytorch-internals/
+- https://github.com/pytorch/pytorch/blob/master/torch/csrc/autograd/function.h#L50
+- https://discuss.pytorch.org/t/extending-autograd-from-c/76240/5
+
+The `Node` interface uses a dynamic vector of `Tensor`s as the input to the node and the output of the node.
+Overloaded `roll` and `unroll` functions are used to translate between these vectors and the broader set of other compound data types that are used in Gen programs.
+
 ## TorchScript modules
 
 TorchScript provides a potentially important vehicle making user models (at least the PyTorch parts) defined in a Python-based prototyping environment available for use in Gen generative functions.
