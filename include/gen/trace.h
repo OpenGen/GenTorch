@@ -40,8 +40,6 @@ public:
      */
     [[nodiscard]] virtual std::any get_return_value() const = 0;
 
-
-    // the implementation will need to any_cast the return value gradient
     virtual std::any gradients(std::any retval_grad, double scaler) = 0;
 
 };
