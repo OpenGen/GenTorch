@@ -9,9 +9,9 @@ using std::pair;
 
 // Data types that can be used as arguments and return values of generative functions
 
-// ***********************
-// ** unsupported types **
-// ***********************
+// **************************************
+// ** default behavior for other types **
+// **************************************
 
 // TODO: consider emitting a warning
 
@@ -87,4 +87,3 @@ T roll(const vector<Tensor>& unrolled, const T& value) {
     auto [num_tensors, rolled] = roll(unrolled, 0, value);
     return rolled;
 }
-

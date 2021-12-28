@@ -9,6 +9,7 @@ FetchContent_MakeAvailable(Catch2)
 # Tests need to be added as executables first
 add_executable(testlib
         test_address.cpp
+        test_conversions.cpp
         test_dml.cpp)
 
 # I'm using C++17 in the test

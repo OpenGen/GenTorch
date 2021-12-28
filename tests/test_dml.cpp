@@ -92,12 +92,6 @@ void do_generate(int idx, int n, std::vector<double>& scores, const Trie& constr
     scores[idx] = total_log_weight;
 }
 
-
-TEST_CASE("dummy2", "[dummy]") {
-    std::cout << "inside test_dml..." << std::endl;
-    dummy();
-}
-
 TEST_CASE("multithreaded_simulate", "[multithreading, dml]") {
     using namespace std::chrono;
     auto start = high_resolution_clock::now();
