@@ -33,10 +33,10 @@ TEST_CASE("dummy", "[dummy]") {
     dummy();
 }
 
-//TEST_CASE( "empty address", "[choice addresses]" ) {
-//    Address empty_addr; // empty address
-//    REQUIRE(empty_addr.empty());
-//}
+TEST_CASE( "empty address", "[choice addresses]" ) {
+    Address empty_addr; // empty address
+    REQUIRE(empty_addr.empty());
+}
 
 TEST_CASE( "list constructed address", "[choice addresses]" ) {
     Address a {"x" };
@@ -134,23 +134,3 @@ TEST_CASE("set_value", "[choice trie]") {
     REQUIRE(value == "asdf");
     REQUIRE(std::any_cast<string>(t.get_value()) == "xxdf");
 }
-
-class Base {
-public:
-    virtual int print_my_val() {
-        std::cout << 2 << std::endl;
-        return 2;
-    }
-    virtual double print_my_val_pure() const = 0;
-};
-
-class Derived : public Base {
-public:
-    explicit Derived(double my_val) : my_val_{my_val} {}
-    double print_my_val_pure() const override {
-        std::cout << my_val_ << std::endl;
-        return my_val_;
-    }
-private:
-    double my_val_;
-};
