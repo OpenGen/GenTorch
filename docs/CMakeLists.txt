@@ -3,6 +3,7 @@ set(DOXYGEN_BUILTIN_STL_SUPPORT YES)
 
 doxygen_add_docs(docs
         gen/address.h
+        gen/conversions.h
         gen/trie.h
         gen/trace.h
         gen/dml.h
