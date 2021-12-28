@@ -400,6 +400,15 @@ private:
 // * DML generative function *
 // ***************************
 
+/**
+ * Abstract type for a generative function constructed with the Dynamic Modeling Language (DML), which is embedded in C++.
+ *
+ * Each DML generative function is a concrete type that inherits from `DMLGenFn` and has an `exec` member function.
+ *
+ * @tparam Model Type of the generative function, which must inherit from `DMLGenFn` via the CRTP.
+ * @tparam ArgsType Type of the input to the generative function.
+ * @tparam ReturnType Type of the return value of hte generative function.
+ */
 template <typename Model, typename ArgsType, typename ReturnType>
 class DMLGenFn {
 private:

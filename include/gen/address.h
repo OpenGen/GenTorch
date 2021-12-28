@@ -22,6 +22,9 @@ See the License for the specific language governing permissions and
 
 class Address;
 
+/**
+ * An immutable type representing a hierarchical address into a call site within a generative function.
+ */
 class Address {
 public:
     Address() : first_(std::optional<std::string>()) { } // empty address

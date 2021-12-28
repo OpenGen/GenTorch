@@ -161,34 +161,6 @@ Trie& Trie::set_subtrie(const Address& address, Trie&& trie, bool overwrite) {
     };
 }
 
-void Trie::add_vert_bars(std::string& str, const std::vector<int>& vert_bars) {
-    for (auto i : vert_bars) {
-        str.replace(i, 1, VERT);
-    }
-}
-
-std::string Trie::get_indent_vert(int pre, const std::vector<int>& vert_bars) {
-    std::string str = std::string(pre, ' ') + VERT + "\n";
-    add_vert_bars(str, vert_bars);
-    return str;
-}
-
-std::string Trie::get_indent_vert_last(int pre, const std::vector<int>& vert_bars) {
-    return std::string(pre, ' ');
-}
-
-std::string Trie::get_indent(int pre, const std::vector<int>& vert_bars) {
-    std::string str = std::string(pre, ' ') + PLUS + HORZ + HORZ + " ";
-    add_vert_bars(str, vert_bars);
-    return str;
-}
-
-std::string Trie::get_indent_last(int pre, const std::vector<int>& vert_bars) {
-    std::string str = std::string(pre, ' ') + LAST + HORZ + HORZ + " ";
-    add_vert_bars(str, vert_bars);
-    return str;
-}
-
 std::ostream& Trie::pretty_print(std::ostream& out, int pre, const std::vector<int>& vert_bars,
                            bool extra_space) const {
     if (has_value()) {
@@ -229,10 +201,35 @@ std::ostream& Trie::pretty_print(std::ostream& out, int pre, const std::vector<i
     return out;
 }
 
-std::ostream& operator<< (std::ostream& out, const Trie& trie) {
-    return trie.pretty_print(out, 0, {});
+
+void add_vert_bars(std::string& str, const std::vector<int>& vert_bars) {
+    for (auto i : vert_bars) {
+        str.replace(i, 1, VERT);
+    }
 }
 
-void dummy() {
+std::string get_indent_vert(int pre, const std::vector<int>& vert_bars) {
+    std::string str = std::string(pre, ' ') + VERT + "\n";
+    add_vert_bars(str, vert_bars);
+    return str;
+}
 
+std::string get_indent_vert_last(int pre, const std::vector<int>& vert_bars) {
+    return std::string(pre, ' ');
+}
+
+std::string get_indent(int pre, const std::vector<int>& vert_bars) {
+    std::string str = std::string(pre, ' ') + PLUS + HORZ + HORZ + " ";
+    add_vert_bars(str, vert_bars);
+    return str;
+}
+
+std::string get_indent_last(int pre, const std::vector<int>& vert_bars) {
+    std::string str = std::string(pre, ' ') + LAST + HORZ + HORZ + " ";
+    add_vert_bars(str, vert_bars);
+    return str;
+}
+
+std::ostream& operator<< (std::ostream& out, const Trie& trie) {
+    return trie.pretty_print(out, 0, {});
 }

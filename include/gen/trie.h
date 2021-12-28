@@ -68,6 +68,9 @@ private:
 
 void pretty_print_value(std::ostream& out, const std::any& value);
 
+/**
+ * A tree whose nodes are indexed by `::Address`'s, with values stored at leaf nodes.
+ */
 class Trie {
 public:
 
@@ -89,18 +92,43 @@ public:
     // destructor
     ~Trie() = default;
 
+    /**
+     *
+     * @return `true` if the Trie has no value and no subtries.
+     */
     [[nodiscard]] bool empty() const {
         return !value_->has_value() && map_->empty();
     }
 
+    /**
+     *
+     * @return `true` if the Trie has a value (in which case it must not have any subtries)
+     */
     [[nodiscard]] bool has_value() const {
         return value_->has_value();
     }
 
+    /**
+     * Return a reference to the stored value, or throw an error if there is no value.
+     *
+     * Note that `any_cast<T>(get_value())` can be used to obtain a typed reference.
+     * @return
+     */
     [[nodiscard]] std::any& get_value() const;
 
+    /**
+     * Return a reference to value stored at the given address, or throw an error if there is no value.
+     * @return
+     */
     [[nodiscard]] std::any& get_value(const Address& address) const;
 
+    /**
+     * Set the value of the trie to a copy of the given value, clearing any other value and any subtries if `overwrite` is `true`.
+     * @tparam T
+     * @param value The value to be copied and stored in the trie  (note that `Tensor` behaves like a shared pointer, and copying it does not copy the underlying data).
+     * @param overwrite
+     * @return A reference to the value stored in the trie.
+     */
     template <typename T>
     T& set_value(T value, bool overwrite=true) {
         if (!overwrite && !empty()) {
@@ -112,6 +140,13 @@ public:
         return *value_ptr;
     }
 
+    /**
+     * Set the value at the given address to a copy of the given value, clearing any other value and any subtries if `overwrite` is `true`.
+     * @tparam T
+     * @param value The value to be copied and stored in the trie  (note that `Tensor` behaves like a shared pointer, and copying it does not copy the underlying data).
+     * @param overwrite
+     * @return A reference to the value stored in the trie.
+     */
     template <typename T>
     T& set_value(const Address& address, T value, bool overwrite=true) {
         if (address.empty()) {
@@ -146,23 +181,21 @@ protected:
     shared_ptr<optional<std::any>> value_ { make_shared<optional<std::any>>() };
     shared_ptr<unordered_map<string,Trie>> map_ { make_shared<unordered_map<string,Trie>>() };
 
-    static const inline std::string VERT = "\u2502";
-    static const inline std::string PLUS = "\u251C";
-    static const inline std::string HORZ = "\u2500";
-    static const inline std::string LAST = "\u2514";
-
-    static void add_vert_bars(std::string& str, const std::vector<int>& vert_bars);
-
-    static std::string get_indent_vert(int pre, const std::vector<int>& vert_bars);
-
-    static std::string get_indent_vert_last(int pre, const std::vector<int>& vert_bars);
-
-    static std::string get_indent(int pre, const std::vector<int>& vert_bars);
-
-    static std::string get_indent_last(int pre, const std::vector<int>& vert_bars);
-
     std::ostream& pretty_print(std::ostream& out, int pre, const std::vector<int>& vert_bars,
                                bool extra_space=false) const;
 };
+
+
+static const inline std::string VERT = "\u2502";
+static const inline std::string PLUS = "\u251C";
+static const inline std::string HORZ = "\u2500";
+static const inline std::string LAST = "\u2514";
+
+void add_vert_bars(std::string& str, const std::vector<int>& vert_bars);
+std::string get_indent_vert(int pre, const std::vector<int>& vert_bars);
+std::string get_indent_vert_last(int pre, const std::vector<int>& vert_bars);
+std::string get_indent(int pre, const std::vector<int>& vert_bars);
+std::string get_indent_last(int pre, const std::vector<int>& vert_bars);
+
 
 std::ostream& operator<< (std::ostream& out, const Trie& trie);

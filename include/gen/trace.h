@@ -19,7 +19,11 @@ See the License for the specific language governing permissions and
 
 #include <any>
 
-
+/**
+ * Immutable execution of a generative function.
+ *
+ * Constructed with `simulate` and `generate` member functions of generative functions.
+ */
 class Trace {
 public:
 

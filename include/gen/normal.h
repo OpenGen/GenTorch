@@ -107,6 +107,9 @@ namespace distributions::normal {
         double score_;
     };
 
+    /**
+     * A generative function representing a univariate normal distribution.
+     */
     class Normal {
     public:
         typedef Tensor return_type;
