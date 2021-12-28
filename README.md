@@ -1,41 +1,57 @@
 # libgen-experimental
 
-NOTE: The code in this repository is not currently intended for external users. It is a sandbox for experimenting with implementations of Gen in C++ (currently based on LibTorch, the PyTorch C++ library).
-
 This repository is based on the hypothesis that a port of [Gen](gen.dev) to C++, using LibTorch for numerical types and operations and automatic differentiation, will be useful for industry research use cases, will be a potential backend for a port of Gen to Python, will provide a balance of ergonomics and performance for learning and inference in structured generative models with stochastic structure, and and will be useful for real-time applications in robotics, computer vision, perception, and human-understanding.
-
-NOTE: Uses C++17.
 
 ## Dependencies
 
+### C++ compiler supporting C++17
+
+For example, either [clang++](https://clang.llvm.org/get_started.html) or [g++](https://gcc.gnu.org/).
+
+### CMake 3.7 or above
+
+See [Installing CMake](https://cmake.org/install/).
+
 ### libtorch
 
-This library depends on the C++ distribution of PyTorch, called LibTorch.
+This library depends on the C++ distribution of PyTorch, called [libtorch](https://pytorch.org/cppdocs/).
 
-So far, the code has only been tested with the CPU-version of LibTorch (version 1.9.1+cpu).
+So far, the code has only been tested with the CPU-version of libtorch (version 1.9.1+cpu).
 
-Follow instructions at [Installing C++ distributions of PyTorch](https://pytorch.org/cppdocs/installing.html) to install LibTorch, and record the path.
+Follow instructions at [Installing C++ distributions of PyTorch](https://pytorch.org/cppdocs/installing.html) to install LibTorch, and record the absolute path to the resulting `libtorch` directory on your filesystem.
 
 ### Doxygen
 
-Only required for generating documentation.
+This is only required for generating documentation.
 
-## Building with cmake
+See [Doxygen Installation](https://www.doxygen.nl/manual/install.html).
 
-Currently this project builds a static library and a dummy test executable.
+## Building 
 
-To build, either open the `libgen-experiment` directory in a C++ IDE (e.g. [https://www.jetbrains.com/clion/](CLion)) or use `cmake` directly.
-In either case, you need to add an option `-DCMAKE_PREFIX_PATH=/absolute/path/to/libtorch` when running cmake.
+Currently this project builds a static library, tests, and documentation.
 
+To build, either open the `libgen-experimental` directory in a C++ IDE (e.g. [https://www.jetbrains.com/clion/](CLion)) or use `cmake` directly.
+In either case, you need to add an option `-DCMAKE_PREFIX_PATH=/absolute/path/to/libtorch` when configuring cmake.
+
+To configure:
 ```shell
-mkdir build
-cd build
-cmake -DCMAKE_PREFIX_PATH=/absolute/path/to/libtorch ..
-cmake --build .
+cmake -S . -b build -DCMAKE_PREFIX_PATH=/absolute/path/to/libtorch
 ```
 
-This should generate some executables in the build directly.
-See `CMakeLists.txt` for the list of executables.
+To build:
+```shell
+cmake --build build
+```
+
+To run tests:
+```shell
+cmake --build build --target test
+```
+
+To build documentation:
+```shell
+cmake --build build --target docs
+```
 
 ## Milestones and planning
 
