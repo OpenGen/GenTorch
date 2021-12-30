@@ -61,6 +61,8 @@ void pretty_print_value(std::ostream& out, const std::any& value) {
         out << *str;
     } else if (const auto* str = std::any_cast<const char*>(&value)) {
         out << *str;
+    } else if (const auto* i = std::any_cast<int>(&value)) {
+        out << *i;
     } else {
         throw std::logic_error("Could not pretty-print choice value"); // TODO give a better error msg
     }
@@ -103,7 +105,7 @@ std::any& Trie::get_value() const {
 
 [[nodiscard]] Trie Trie::get_subtrie(const Address& address, bool strict) const {
     if (address.empty()) {
-        throw TrieKeyError(address);
+        return *this; // calls copy constructor, returns Trie with shared data
     }
     if (has_value()) {
         throw TrieKeyError(address);
@@ -129,17 +131,14 @@ std::any& Trie::get_value() const {
     }
 }
 
-Trie& Trie::set_subtrie(const Address& address, Trie&& trie, bool overwrite) {
+void Trie::set_subtrie(const Address& address, Trie trie, bool overwrite) {
     if (address.empty()) {
         if (!overwrite && !empty()) {
             throw TrieOverwriteError(address);
         }
-        if (trie.has_value()) {
-            set_value(trie.get_value(), overwrite);
-        } else {
-            map_ = trie.map_; // copy the shared pointer
-        }
-        return *this;
+        // copy the shared pointers
+        value_ = trie.value_;
+        map_ = trie.map_;
     } else {
         value_->reset(); // delete choice value, if there is one
         auto iter = map_->find(address.first());
@@ -154,7 +153,7 @@ Trie& Trie::set_subtrie(const Address& address, Trie&& trie, bool overwrite) {
             rest_subtrie_ptr = &iter->second; // copy assignment
         }
         try {
-            return rest_subtrie_ptr->set_subtrie(address.rest(), std::move(trie), overwrite);
+            rest_subtrie_ptr->set_subtrie(address.rest(), std::move(trie), overwrite);
         } catch (const TrieOverwriteError&) {
             throw TrieOverwriteError(address);
         }

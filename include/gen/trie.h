@@ -111,7 +111,7 @@ public:
     /**
      * Return a reference to the stored value, or throw an error if there is no value.
      *
-     * Note that `any_cast<T>(get_value())` can be used to obtain a typed reference.
+     * Note that `any_cast<T>(get_value())` can be used to obtain a typed value.
      * @return
      */
     [[nodiscard]] std::any& get_value() const;
@@ -156,8 +156,8 @@ public:
             if (!overwrite && !subtrie.empty()) {
                 throw TrieOverwriteError(address);
             }
-            Trie& subtrie_ref = set_subtrie(address, std::move(subtrie));
-            T& value_ref = subtrie_ref.set_value(value);
+            set_subtrie(address, subtrie);
+            T& value_ref = subtrie.set_value(value);
             return value_ref;
         }
     }
@@ -166,15 +166,16 @@ public:
 
     [[nodiscard]] Trie get_subtrie(const Address& address, bool strict=true) const;
 
-    Trie& set_subtrie(const Address& address, Trie&& trie, bool overwrite=true);
+    void set_subtrie(const Address& address, Trie trie, bool overwrite=true);
 
     [[nodiscard]] const unordered_map<string,Trie>& subtries() const { return *map_; }
 
-    friend std::ostream& operator<< (std::ostream& out, const Trie& trie);
+    friend std::ostream& operator<<(std::ostream& out, const Trie& trie);
+
 
     // TODO choices() - actually rename to 'values()' or 'flat_iter()'
     // TODO: update(other)
-    // TODO: equality testing..
+    // NOTE: we cannot implement == (at least not easily) since we use std::any for values
     // TODO: clone()
 
 protected:

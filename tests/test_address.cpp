@@ -37,7 +37,7 @@ TEST_CASE( "empty address", "[choice addresses]" ) {
 
 TEST_CASE( "list constructed address", "[choice addresses]" ) {
     Address a {"x" };
-    Address b {"x", "y" };
+    Address b {"x", "y"};
     REQUIRE(!a.empty());
     REQUIRE(!b.empty());
     REQUIRE(a.first() == "x");
@@ -63,7 +63,7 @@ TEST_CASE( "address iostream", "[choice addresses]" ) {
 
 TEST_CASE( "address with strings keys immutable", "[choice addresses]" ) {
     std::string f = "x";
-    Address c {f };
+    Address c {f};
     f = "y";
     REQUIRE(c.first() == "x");
 }
