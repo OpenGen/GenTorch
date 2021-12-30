@@ -33,6 +33,7 @@ using std::cout, std::endl;
 using std::shared_ptr, std::unique_ptr, std::make_shared;
 using std::optional, std::make_optional;
 using torch::Tensor;
+using torch::nn::Module;
 
 using torch::autograd::AutogradContext;
 using torch::autograd::variable_list;
@@ -171,8 +172,10 @@ public:
     SubtraceType& add_subtrace(const Address& address, SubtraceType subtrace) {
         score_ += subtrace.get_score();
         try {
-            // TODO: fix copy
-            return subtraces_->set_value(address, subtrace, false);
+            shared_ptr<SubtraceType> subtrace_ptr = make_shared<SubtraceType>(std::move(subtrace));
+            shared_ptr<Trace> subtrace_base_ptr = subtrace_ptr;
+            subtraces_->set_value(address, subtrace_base_ptr, false);
+            return *subtrace_ptr;
         } catch (const TrieOverwriteError&) {
             throw DMLAlreadyVisitedError(address);
         }
@@ -183,7 +186,7 @@ public:
     }
 
     [[nodiscard]] const Trace& get_subtrace(const Address& address) const {
-        return *any_cast<Trace>(&subtraces_->get_value(address));
+        return *any_cast<shared_ptr<Trace>>(subtraces_->get_value(address));
     }
 
     template <typename Generator>
@@ -199,7 +202,7 @@ public:
         // TODO handle calls at the empty address properly
         for (const auto& [key, subtrie] : subtraces.subtries()) {
             if (subtrie.has_value()) {
-                const auto* subtrace = any_cast<Trace>(&subtrie.get_value());
+                const auto subtrace = any_cast<shared_ptr<Trace>>(subtrie.get_value());
                 trie.set_subtrie(Address{key}, subtrace->get_choice_trie());
             } else if (subtrie.empty()) {
             } else {
@@ -360,7 +363,7 @@ public:
         Trie sub_constraints { constraints_.get_subtrie(address, false) };
         typename CalleeType::trace_type subtrace;
         if (prev_trace_.has_subtrace(address)) {
-            auto& prev_subtrace = any_cast<typename CalleeType::trace_type&>(prev_trace_.get_subtrace(address));
+            auto& prev_subtrace = *any_cast<unique_ptr<Trace>>(prev_trace_.get_subtrace(address));
             auto update_result = prev_subtrace.update(gen_, gen_fn_with_args, sub_constraints);
             subtrace = std::get<0>(update_result);
             log_weight_ += std::get<1>(update_result);
@@ -400,6 +403,9 @@ private:
 // * DML generative function *
 // ***************************
 
+class DMLGenFnModule : public torch::nn::Module {
+};
+
 /**
  * Abstract type for a generative function constructed with the Dynamic Modeling Language (DML), which is embedded in C++.
  *
@@ -414,6 +420,7 @@ class DMLGenFn {
 private:
     const ArgsType args_;
     const bool assert_retval_grad_;
+    const DMLGenFnModule module_;
 public:
     typedef ArgsType args_type;
     typedef ReturnType return_type;
@@ -423,6 +430,10 @@ public:
 
     const ArgsType& get_args() const {
         return args_;
+    }
+
+    DMLGenFnModule get_torch_nn_module() const {
+        return module_;
     }
 
     template <typename Generator>
