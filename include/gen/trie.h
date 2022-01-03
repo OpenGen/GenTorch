@@ -66,11 +66,10 @@ private:
     const std::string msg_;
 };
 
-void pretty_print_value(std::ostream& out, const std::any& value);
-
 /**
  * A tree whose nodes are indexed by `::Address`'s, with values stored at leaf nodes.
  */
+template <typename ValueType>
 class Trie {
 public:
 
@@ -114,13 +113,13 @@ public:
      * Note that `any_cast<T>(get_value())` can be used to obtain a typed value.
      * @return
      */
-    [[nodiscard]] std::any& get_value() const;
+    [[nodiscard]] ValueType& get_value() const;
 
     /**
      * Return a reference to value stored at the given address, or throw an error if there is no value.
      * @return
      */
-    [[nodiscard]] std::any& get_value(const Address& address) const;
+    [[nodiscard]] ValueType& get_value(const Address& address) const;
 
     /**
      * Set the value of the trie to a copy of the given value, clearing any other value and any subtries if `overwrite` is `true`.
@@ -129,15 +128,15 @@ public:
      * @param overwrite
      * @return A reference to the value stored in the trie.
      */
-    template <typename T>
-    T& set_value(T value, bool overwrite=true) {
+    ValueType& set_value(ValueType value, bool overwrite=true) {
         if (!overwrite && !empty()) {
             throw TrieOverwriteError(Address{});
         }
         value_->emplace(value); // calls constructor of std::any with argument of type T
         map_->clear();
-        T* value_ptr = std::any_cast<T>(&value_->value());
-        return *value_ptr;
+        return value_->value();
+//        ValueType* value_ptr = &value_->value();
+//        return *value_ptr;
     }
 
     /**
@@ -147,8 +146,7 @@ public:
      * @param overwrite
      * @return A reference to the value stored in the trie.
      */
-    template <typename T>
-    T& set_value(const Address& address, T value, bool overwrite=true) {
+    ValueType& set_value(const Address& address, ValueType value, bool overwrite=true) {
         if (address.empty()) {
             return set_value(value, overwrite);
         } else {
@@ -157,46 +155,253 @@ public:
                 throw TrieOverwriteError(address);
             }
             set_subtrie(address, subtrie);
-            T& value_ref = subtrie.set_value(value);
-            return value_ref;
+            return subtrie.set_value(value);
         }
     }
 
     [[nodiscard]] bool has_subtrie(const Address& address) const;
 
-    [[nodiscard]] Trie get_subtrie(const Address& address, bool strict=true) const;
+    [[nodiscard]] Trie<ValueType> get_subtrie(const Address& address, bool strict=true) const;
 
-    void set_subtrie(const Address& address, Trie trie, bool overwrite=true);
+    void set_subtrie(const Address& address, Trie<ValueType> trie, bool overwrite=true);
 
-    [[nodiscard]] const unordered_map<string,Trie>& subtries() const { return *map_; }
+    [[nodiscard]] const unordered_map<string,Trie<ValueType>>& subtries() const { return *map_; }
 
-    friend std::ostream& operator<<(std::ostream& out, const Trie& trie);
+    template <typename T>
+    friend std::ostream& operator<<(std::ostream& out, const Trie<T>& trie);
 
 
     // TODO choices() - actually rename to 'values()' or 'flat_iter()'
     // TODO: update(other)
     // NOTE: we cannot implement == (at least not easily) since we use std::any for values
+    // if we restricted choices to be Tensor, then we could implement == (and approximate variants)
     // TODO: clone()
 
 protected:
-    shared_ptr<optional<std::any>> value_ { make_shared<optional<std::any>>() };
-    shared_ptr<unordered_map<string,Trie>> map_ { make_shared<unordered_map<string,Trie>>() };
+    shared_ptr<optional<ValueType>> value_ { make_shared<optional<ValueType>>() };
+    shared_ptr<unordered_map<string,Trie<ValueType>>> map_ { make_shared<unordered_map<string,Trie<ValueType>>>() };
 
     std::ostream& pretty_print(std::ostream& out, int pre, const std::vector<int>& vert_bars,
                                bool extra_space=false) const;
 };
 
 
-static const inline std::string VERT = "\u2502";
-static const inline std::string PLUS = "\u251C";
-static const inline std::string HORZ = "\u2500";
-static const inline std::string LAST = "\u2514";
 
-void add_vert_bars(std::string& str, const std::vector<int>& vert_bars);
-std::string get_indent_vert(int pre, const std::vector<int>& vert_bars);
-std::string get_indent_vert_last(int pre, const std::vector<int>& vert_bars);
-std::string get_indent(int pre, const std::vector<int>& vert_bars);
-std::string get_indent_last(int pre, const std::vector<int>& vert_bars);
+template <typename T>
+std::ostream& operator<< (std::ostream& out, const Trie<T>& trie);
+
+typedef Trie<std::any> ChoiceTrie;
+
+//
 
 
-std::ostream& operator<< (std::ostream& out, const Trie& trie);
+
+
+template <typename ValueType>
+ValueType& Trie<ValueType>::get_value() const {
+    try {
+        return value_->value();
+    } catch (const std::bad_optional_access&) {
+        throw TrieKeyError(Address{});
+    }
+}
+
+template <typename ValueType>
+[[nodiscard]] ValueType& Trie<ValueType>::get_value(const Address& address) const {
+    if (address.empty()) {
+        return get_value();
+    } else {
+        try {
+            return get_subtrie(address).get_value();
+        } catch (const TrieKeyError&) {
+            throw TrieKeyError(address);
+        }
+    }
+}
+
+template <typename ValueType>
+[[nodiscard]] bool Trie<ValueType>::has_subtrie(const Address& address) const {
+    if (address.empty()) {
+        return true;
+    }
+    if (has_value()) {
+        return false;
+    }
+    auto iter = map_->find(address.first());
+    if (iter == map_->end()) {
+        return false;
+    } else {
+        return iter->second.has_subtrie(address.rest());
+    }
+}
+
+template <typename ValueType>
+[[nodiscard]] Trie<ValueType> Trie<ValueType>::get_subtrie(const Address& address, bool strict) const {
+    if (address.empty()) {
+        return *this; // calls copy constructor, returns Trie with shared data
+    }
+    if (has_value()) {
+        throw TrieKeyError(address);
+    }
+    auto iter = map_->find(address.first());
+    if (iter == map_->end()) {
+        if (strict) {
+            throw TrieKeyError(address);
+        } else {
+            return Trie<ValueType> {}; // return new empty choice trie
+        }
+    } else {
+        const Address& rest = address.rest();
+        if (rest.empty()) {
+            return iter->second;
+        } else {
+            try {
+                return iter->second.get_subtrie(rest, strict);
+            } catch (const TrieKeyError&) {
+                throw TrieKeyError(address);
+            }
+        }
+    }
+}
+
+template <typename ValueType>
+void Trie<ValueType>::set_subtrie(const Address& address, Trie<ValueType> trie, bool overwrite) {
+    if (address.empty()) {
+        if (!overwrite && !empty()) {
+            throw TrieOverwriteError(address);
+        }
+        // copy the shared pointers
+        value_ = trie.value_;
+        map_ = trie.map_;
+    } else {
+        value_->reset(); // delete choice value, if there is one
+        auto iter = map_->find(address.first());
+        Trie<ValueType>* rest_subtrie_ptr = nullptr;
+        if (iter == map_->end()) {
+            // there is no subtrie at this key, add it
+            Trie<ValueType> rest_subtrie {};
+            map_->insert({address.first(), std::move(rest_subtrie)});
+            rest_subtrie_ptr = &((*map_)[address.first()]);
+        } else {
+            // there is a subtrie at this key
+            rest_subtrie_ptr = &iter->second; // copy assignment
+        }
+        try {
+            rest_subtrie_ptr->set_subtrie(address.rest(), std::move(trie), overwrite);
+        } catch (const TrieOverwriteError&) {
+            throw TrieOverwriteError(address);
+        }
+    };
+}
+
+static const std::string VERT = "\u2502";
+static const std::string PLUS = "\u251C";
+static const std::string HORZ = "\u2500";
+static const std::string LAST = "\u2514";
+
+inline void pretty_print_value(std::ostream& out, const std::any& value) {
+    if (const auto* tensor = std::any_cast<Tensor>(&value)) {
+        if (tensor->ndimension() == 0) {
+            // a scalar
+            if (tensor->dtype() == torch::ScalarType::Float) {
+                out << tensor->item<float>();
+            } else if (tensor->dtype() == torch::ScalarType::Double) {
+                out << tensor->item<double>();
+            } else if (tensor->dtype() == torch::ScalarType::Bool) {
+                out << (tensor->item<bool>() ? "true" : "false");
+            } else {
+                std::stringstream ss;
+                ss << "printing choices not implemented for Tensor dtype: ";
+                ss << tensor->dtype();
+                throw std::logic_error(ss.str()); // TODO implement support for this
+            }
+        } else {
+            // not a scalar
+            out << "Tensor"; // TODO give a better representation
+        }
+    } else if (const auto* str = std::any_cast<std::string>(&value)) {
+        out << *str;
+    } else if (const auto* str = std::any_cast<const char*>(&value)) {
+        out << *str;
+    } else if (const auto* i = std::any_cast<int>(&value)) {
+        out << *i;
+    } else {
+        throw std::logic_error("Could not pretty-print choice value"); // TODO give a better error msg
+    }
+}
+
+inline void add_vert_bars(std::string& str, const std::vector<int>& vert_bars) {
+    for (auto i : vert_bars) {
+        str.replace(i, 1, VERT);
+    }
+}
+
+inline std::string get_indent_vert(int pre, const std::vector<int>& vert_bars) {
+    std::string str = std::string(pre, ' ') + VERT + "\n";
+    add_vert_bars(str, vert_bars);
+    return str;
+}
+
+inline std::string get_indent_vert_last(int pre, const std::vector<int>& vert_bars) {
+    return std::string(pre, ' ');
+}
+
+inline std::string get_indent(int pre, const std::vector<int>& vert_bars) {
+    std::string str = std::string(pre, ' ') + PLUS + HORZ + HORZ + " ";
+    add_vert_bars(str, vert_bars);
+    return str;
+}
+
+inline std::string get_indent_last(int pre, const std::vector<int>& vert_bars) {
+    std::string str = std::string(pre, ' ') + LAST + HORZ + HORZ + " ";
+    add_vert_bars(str, vert_bars);
+    return str;
+}
+
+
+template <typename ValueType>
+std::ostream& Trie<ValueType>::pretty_print(std::ostream& out, int pre, const std::vector<int>& vert_bars,
+                                            bool extra_space) const {
+    if (has_value()) {
+        pretty_print_value(out, get_value());
+        return out;
+    }
+    auto indent_vert = get_indent_vert(pre, vert_bars);
+    auto indent_vert_last = get_indent_vert_last(pre, vert_bars);
+    auto indent = get_indent(pre, vert_bars);
+    auto indent_last = get_indent_last(pre, vert_bars);
+    size_t cur = 0;
+    size_t n = map_->size();
+    for (const auto& key_and_subtrie : *map_) {
+        bool is_last = (cur == n - 1);
+        std::string key = key_and_subtrie.first;
+        if (extra_space) {
+            out << indent_vert;
+        }
+        if (is_last) {
+            out << indent_last;
+        } else {
+            out << indent;
+        }
+        if (key_and_subtrie.second.has_value()) {
+            out << key << " : ";
+            pretty_print_value(out, key_and_subtrie.second.get_value());
+            out << std::endl;
+        } else {
+            out << key << std::endl;
+            std::vector<int> next_vert_bars = vert_bars;
+            if (!is_last) {
+                next_vert_bars.push_back(pre);
+            }
+            key_and_subtrie.second.pretty_print(out, pre + 4, next_vert_bars);
+        }
+        cur += 1;
+    }
+    return out;
+}
+
+
+template <typename ValueType>
+std::ostream& operator<< (std::ostream& out, const Trie<ValueType>& trie) {
+    return trie.pretty_print(out, 0, {});
+}

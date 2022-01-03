@@ -8,7 +8,6 @@ set(HEADER_LIST
 
 add_library(gen_library
         address.cpp
-        trie.cpp
         normal.cpp
         conversions.cpp
         ${HEADER_LIST})
