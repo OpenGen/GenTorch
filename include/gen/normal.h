@@ -23,7 +23,7 @@ See the License for the specific language governing permissions and
 
 // TODO move implementation to cpp files
 
-namespace distributions::normal {
+namespace gen::distributions::normal {
 
     using torch::Tensor;
     using torch::tensor;

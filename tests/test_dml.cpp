@@ -28,8 +28,10 @@ See the License for the specific language governing permissions and
 using torch::Tensor;
 using torch::TensorOptions;
 using torch::tensor;
-using distributions::normal::Normal;
-using distributions::normal::NormalDist;
+using gen::dml::DMLGenFn;
+using gen::distributions::normal::Normal;
+using gen::distributions::normal::NormalDist;
+using gen::ChoiceTrie;
 
 
 bool tensor_scalar_bool(Tensor a) {
@@ -51,11 +53,11 @@ public:
         const auto x = tensor(0.0);
         const auto y = tensor(1.0) + z + x;
         const auto a = tensor(0.0);
-        const Tensor z1 = tracer.call(Address{"z1"}, Normal(a, tensor(1.0)));
-        const Tensor z2 = tracer.call(Address{"z2"}, Normal(z1, tensor(0.1)));
+        const Tensor z1 = tracer.call({"z1"}, Normal(a, tensor(1.0)));
+        const Tensor z2 = tracer.call({"z2"}, Normal(z1, tensor(0.1)));
         Tensor result;
         if (tensor_scalar_bool(z1 < 0.0)) {
-            const Tensor z3 = tracer.call(Address{"recursive"}, Foo(z2, depth + 1));
+            const Tensor z3 = tracer.call({"recursive"}, Foo(z2, depth + 1));
             result = x + z1 + y + z2 + z3;
         } else {
             result = x + z1 + y + z2;
@@ -69,7 +71,7 @@ TEST_CASE("simulate", "[dml]") {
     std::random_device rd{};
     std::mt19937 gen{rd()};
     auto trace = model.simulate(gen, true);
-    Trie choices = trace.get_choice_trie();
+    ChoiceTrie choices = trace.get_choice_trie();
     REQUIRE(choices.get_subtrie({"z1"}).has_value());
     REQUIRE(choices.get_subtrie({"z2"}).has_value());
 }
@@ -141,7 +143,7 @@ TEST_CASE("multithreaded_simulate", "[multithreading, dml]") {
 
 TEST_CASE("multithreaded_generate", "[multithreading, dml]") {
     ChoiceTrie constraints {};
-    constraints.set_value(Address{"z2"}, tensor(1.0));
+    constraints.set_value({"z2"}, tensor(1.0));
     using namespace std::chrono;
     auto start = high_resolution_clock::now();
     int n = 1000;
