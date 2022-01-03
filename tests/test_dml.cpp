@@ -78,13 +78,13 @@ TEST_CASE("generate", "[dml]") {
     Foo model {tensor(1.0), 0};
     std::random_device rd{};
     std::mt19937 gen{rd()};
-    Trie constraints {};
+    ChoiceTrie constraints {};
     constraints.set_value({"z1"}, tensor(-1.0));
     constraints.set_value({"z2"}, tensor(2.0));
     constraints.set_value({"recursive", "z1"}, tensor(1.0));
     constraints.set_value({"recursive", "z2"}, tensor(3.0));
     auto [trace, log_weight] = model.generate(gen, constraints, true);
-    Trie choices = trace.get_choice_trie();
+    ChoiceTrie choices = trace.get_choice_trie();
     REQUIRE(any_cast<Tensor>(choices.get_value({"z1"})).equal(tensor(-1.0)));
     REQUIRE(any_cast<Tensor>(choices.get_value({"z2"})).equal(tensor(2.0)));
     REQUIRE(any_cast<Tensor>(choices.get_value({"recursive", "z1"})).equal(tensor(1.0)));
@@ -104,7 +104,7 @@ void do_simulate(int idx, int n, std::vector<double>& scores) {
     scores[idx] = score;
 }
 
-void do_generate(int idx, int n, std::vector<double>& scores, const Trie& constraints) {
+void do_generate(int idx, int n, std::vector<double>& scores, const ChoiceTrie& constraints) {
     std::random_device rd{};
     std::mt19937 gen{rd()};
     double total_log_weight = 0.0;
@@ -140,7 +140,7 @@ TEST_CASE("multithreaded_simulate", "[multithreading, dml]") {
 
 
 TEST_CASE("multithreaded_generate", "[multithreading, dml]") {
-    Trie constraints {};
+    ChoiceTrie constraints {};
     constraints.set_value(Address{"z2"}, tensor(1.0));
     using namespace std::chrono;
     auto start = high_resolution_clock::now();
@@ -187,7 +187,7 @@ TEST_CASE("gradients with no parameters", "[gradients, dml]") {
     Tensor x = tensor(1.0);
     Tensor y = tensor(1.0);
     const auto model = GradientsTestGenFn(x, y);
-    Trie constraints {};
+    ChoiceTrie constraints {};
     Tensor z1 = tensor(1.0);
     constraints.set_value({"z1"}, z1);
     auto [trace, log_weight] = model.generate(gen, constraints, true);

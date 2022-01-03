@@ -145,7 +145,7 @@ public:
     typedef std::pair<DMLTrace<Model>, double> update_return_type;
 
     explicit DMLTrace(const args_type& args, bool prepare_for_gradients, bool assert_retval_grad) :
-        subtraces_{make_shared<Trie>()},
+        subtraces_{make_shared<Trie<shared_ptr<Trace>>>()},
         score_{0.0},
         assert_retval_grad_{assert_retval_grad},
         args_{maybe_track_args(args, prepare_for_gradients)},
@@ -191,18 +191,18 @@ public:
 
     template <typename Generator>
     update_return_type update(Generator& gen, const Model& model_with_args,
-                                                                         const Trie& constraints) const {
+                              const Trie<shared_ptr<Trace>>& constraints) const {
         auto tracer = DMLUpdateTracer<Generator, Model>(gen, constraints);
         auto value = model_with_args.exec(tracer);
         return tracer.finish(value);
     }
 
-    static Trie get_choice_trie(const Trie& subtraces) {
-        Trie trie {};
+    static ChoiceTrie get_choice_trie(const Trie<shared_ptr<Trace>>& subtraces) {
+        ChoiceTrie trie {};
         // TODO handle calls at the empty address properly
         for (const auto& [key, subtrie] : subtraces.subtries()) {
             if (subtrie.has_value()) {
-                const auto subtrace = any_cast<shared_ptr<Trace>>(subtrie.get_value());
+                const auto subtrace = subtrie.get_value();
                 trie.set_subtrie(Address{key}, subtrace->get_choice_trie());
             } else if (subtrie.empty()) {
             } else {
@@ -214,7 +214,7 @@ public:
 
     void set_value(return_type value) { maybe_value_ = value; }
 
-    [[nodiscard]] Trie get_choice_trie() const override { return get_choice_trie(*subtraces_); }
+    [[nodiscard]] ChoiceTrie get_choice_trie() const override { return get_choice_trie(*subtraces_); }
 
     const args_type& get_args() const { return args_.first; }
 
@@ -238,7 +238,7 @@ public:
 
 private:
     pair<const args_type&, optional<shared_ptr<const args_type>>> args_;
-    shared_ptr<Trie> subtraces_;
+    shared_ptr<Trie<shared_ptr<Trace>>> subtraces_;
     double score_;
     optional<return_type> maybe_value_;
     bool prepared_for_gradients_;
@@ -301,7 +301,7 @@ class DMLGenerateTracer {
 public:
     typedef typename Model::args_type args_type;
 
-    explicit DMLGenerateTracer(Generator& gen, const args_type& args, const Trie& constraints,
+    explicit DMLGenerateTracer(Generator& gen, const args_type& args, const ChoiceTrie& constraints,
                                bool prepare_for_gradients, bool assert_retval_grad) :
             finished_(false),
             gen_{gen},
@@ -317,7 +317,7 @@ public:
     typename CalleeType::return_type
     call(Address&& address, CalleeType&& gen_fn_with_args) {
         assert(!finished_); // if this assertion fails, it is a bug in DML not user code
-        Trie sub_constraints { constraints_.get_subtrie(address, false) };
+        ChoiceTrie sub_constraints { constraints_.get_subtrie(address, false) };
         auto subtrace_and_log_weight = gen_fn_with_args.generate(gen_, sub_constraints, prepare_for_gradients_);
         Trace& subtrace = trace_.add_subtrace(address, std::move(subtrace_and_log_weight.first));
         const auto& value = any_cast<typename CalleeType::return_type>(subtrace.get_return_value());
@@ -340,7 +340,7 @@ private:
     bool finished_;
     Generator& gen_;
     DMLTrace<Model> trace_;
-    const Trie& constraints_;
+    const ChoiceTrie& constraints_;
     bool prepare_for_gradients_;
     double& scaler_reference_;
 };
@@ -352,7 +352,7 @@ private:
 template <typename Generator, typename Model>
 class DMLUpdateTracer {
 public:
-    explicit DMLUpdateTracer(Generator& gen, const Trie& constraints)
+    explicit DMLUpdateTracer(Generator& gen, const ChoiceTrie& constraints)
             : finished_(false), gen_{gen}, trace_{},
               log_weight_(0.0), constraints_(constraints) { }
 
@@ -360,7 +360,7 @@ public:
     typename CalleeType::return_type
     call(Address&& address, CalleeType&& gen_fn_with_args) {
         assert(!finished_); // if this assertion fails, it is a bug in DML not user code
-        Trie sub_constraints { constraints_.get_subtrie(address, false) };
+        ChoiceTrie sub_constraints { constraints_.get_subtrie(address, false) };
         typename CalleeType::trace_type subtrace;
         if (prev_trace_.has_subtrace(address)) {
             auto& prev_subtrace = *any_cast<unique_ptr<Trace>>(prev_trace_.get_subtrace(address));
@@ -380,7 +380,7 @@ public:
         return value;
     }
 
-    std::tuple<DMLTrace<Model>,double,Trie> finish(typename Model::return_type value) {
+    std::tuple<DMLTrace<Model>,double,ChoiceTrie> finish(typename Model::return_type value) {
         log_weight_ += 0; // TODO decrement for all visited
         // TODO discard all that were not visied (using update method of Trie, which still needs to be implemented)
         finished_ = true;
@@ -394,8 +394,8 @@ private:
     Generator& gen_;
     const DMLTrace<Model>& prev_trace_;
     DMLTrace<Model> trace_;
-    const Trie& constraints_;
-    Trie discard_;
+    const ChoiceTrie& constraints_;
+    ChoiceTrie discard_;
 };
 
 
@@ -446,7 +446,7 @@ public:
 
     template <typename Generator>
     std::pair<DMLTrace<Model>,double> generate(
-            Generator& gen, const Trie& constraints, bool prepare_for_gradients) const {
+            Generator& gen, const ChoiceTrie& constraints, bool prepare_for_gradients) const {
         c10::InferenceMode guard{!prepare_for_gradients}; // inference mode is on if we are not preparing for gradients
         auto tracer = DMLGenerateTracer<Generator,Model>{gen, args_, constraints, prepare_for_gradients, assert_retval_grad_};
         auto value = static_cast<const Model*>(this)->exec(tracer);

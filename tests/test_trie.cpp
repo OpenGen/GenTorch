@@ -31,12 +31,12 @@ using torch::TensorOptions;
 using torch::tensor;
 
 TEST_CASE("empty", "[trie]")  {
-    Trie trie {};
+    ChoiceTrie trie {};
     REQUIRE(trie.empty());
     trie.set_value({"a", "b"}, 1);
     REQUIRE(!trie.empty());
 
-    Trie trie2 {};
+    ChoiceTrie trie2 {};
     trie2.set_value(1);
     REQUIRE(!trie.empty());
 }
@@ -44,7 +44,7 @@ TEST_CASE("empty", "[trie]")  {
 TEST_CASE("basic set_value and get_value", "[trie]" ) {
 
     // hierarchical address
-    Trie trie { };
+    ChoiceTrie trie { };
     REQUIRE(!trie.has_value());
     trie.set_value({"a", "b", "c", "d"}, 1);
     trie.set_value({"a", "b", "e", "f"}, 2);
@@ -55,7 +55,7 @@ TEST_CASE("basic set_value and get_value", "[trie]" ) {
     REQUIRE(any_cast<string>(trie.get_value({"a", "b", "g"})) == "3");
 
     // empty address
-    Trie trie2 {};
+    ChoiceTrie trie2 {};
     string str {"asdf"};
     trie2.set_value(str);
     REQUIRE(trie2.has_value());
@@ -64,7 +64,7 @@ TEST_CASE("basic set_value and get_value", "[trie]" ) {
 
 
 TEST_CASE("mutability of references from get_value", "[trie]") {
-    Trie trie {};
+    ChoiceTrie trie {};
     string str {"asdf"};
     trie.set_value(str);
 
@@ -95,9 +95,9 @@ TEST_CASE("mutability of references from get_value", "[trie]") {
 
 TEST_CASE("mutability of references from set_value", "[trie]") {
 
-    Trie trie {};
+    ChoiceTrie trie {};
     string str = "asdf";
-    string& str_ref = trie.set_value(str);
+    string& str_ref = *any_cast<string>(&trie.set_value(str));
 
     // because set_value accepts the value by-value, it stores a copy of the provided value
     str.replace(0, 2, "xx");
@@ -116,33 +116,33 @@ TEST_CASE("mutability of references from set_value", "[trie]") {
 
 TEST_CASE("get_subtrie", "[trie]") {
 
-    Trie trie {};
+    ChoiceTrie trie {};
     trie.set_value({"a", "b", "c"}, 1);
     trie.set_value({"a", "b", "d"}, 2);
 
-    Trie subtrie = trie.get_subtrie({"a", "b"});
+    ChoiceTrie subtrie = trie.get_subtrie({"a", "b"});
     REQUIRE(!subtrie.has_value());
     REQUIRE(subtrie.subtries().size() == 2);
     REQUIRE(any_cast<int>(subtrie.get_value({"c"})) == 1);
     REQUIRE(any_cast<int>(subtrie.get_value({"d"})) == 2);
 
-    Trie subtrie2 = trie.get_subtrie({});
+    ChoiceTrie subtrie2 = trie.get_subtrie({});
     REQUIRE(!subtrie2.has_value());
     REQUIRE(subtrie2.subtries().size() == 1);
     REQUIRE(any_cast<int>(subtrie2.get_subtrie({"a", "b", "c"}).get_value()) == 1);
     REQUIRE(any_cast<int>(subtrie2.get_subtrie({"a", "b", "d"}).get_value()) == 2);
 
-    Trie subtrie3 = trie.get_subtrie({"a", "b", "c"});
+    ChoiceTrie subtrie3 = trie.get_subtrie({"a", "b", "c"});
     REQUIRE(any_cast<int>(subtrie3.get_value()) == 1);
 
 }
 
 TEST_CASE("set_subtrie", "[trie]" ) {
 
-    Trie subtrie {};
+    ChoiceTrie subtrie {};
     subtrie.set_value({"b", "c"}, 1);
 
-    Trie trie {};
+    ChoiceTrie trie {};
     trie.set_subtrie({"a"}, subtrie);
     REQUIRE(trie.subtries().size() == 1);
     REQUIRE(any_cast<int>(trie.get_value({"a", "b", "c"})) == 1);
@@ -152,22 +152,22 @@ TEST_CASE("set_subtrie", "[trie]" ) {
     REQUIRE(any_cast<int>(trie.get_value({"a", "b", "c"})) == 2);
 
     // set_subtrie with empty address
-    Trie trie2 {};
+    ChoiceTrie trie2 {};
     trie2.set_subtrie({}, subtrie);
     REQUIRE(any_cast<int>(trie2.get_value({"b", "c"})) == 2);
 }
 
 TEST_CASE("copy constructor", "[trie]") {
     // Trie behaves like a reference, like torch::Tensor
-    Trie trie {};
+    ChoiceTrie trie {};
     trie.set_value({"a", "b"}, 1);
     REQUIRE(any_cast<int>(trie.get_value({"a", "b"})) == 1);
-    Trie trie2 {trie};
+    ChoiceTrie trie2 {trie};
     trie2.set_value({"a", "b"}, 2);
     REQUIRE(any_cast<int>(trie.get_value({"a", "b"})) == 2);
 }
 
-void walk_choice_trie(const Trie& trie, size_t indent) {
+void walk_choice_trie(const ChoiceTrie& trie, size_t indent) {
     for (const auto& [key, subtrie] : trie.subtries()) {
         std::cout << std::string(indent, ' ') << "> enter " << key << std::endl;
         if (subtrie.has_value()) {
