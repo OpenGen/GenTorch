@@ -21,6 +21,60 @@ See the License for the specific language governing permissions and
 
 namespace gen {
 
+    class Parameters : public torch::nn::Module {
+    public:
+        virtual vector<shared_ptr<Parameters>> callee_modules() { return {}; }
+
+        /**
+         *
+         * @param module a torch::nn::Module, that must have a name, and must implement callee_modules()
+         * @param visited
+         */
+        Parameters(shared_ptr<torch::nn::Module> module, std::set<std::string>& visited) : module_{module}, grad_accumulator_{}, children_{} {
+            visited.insert(module->name());
+            for (const auto& t: module->parameters(true)) {
+                grad_accumulator_.emplace_back(torch::zeros_like(t).detach());
+            }
+            for (const auto& callee_module : module->callee_modules()) {
+                if (visited.find(callee_module->name()) == visited.end()) {
+                    children_.emplace(std::make_pair(callee_module->name(), Parameter(callee_module)));
+                }
+            }
+        }
+
+        static Parameters make_parameters(shared_ptr<torch::nn::Module> module) {
+            std::set<std::string> visited {};
+            return Parameters(module, visited);
+        }
+
+        /**
+         *
+         * @return the torch::nn::Module that contains all the modules directly called by the body
+         */
+        torch::nn::Module& module() { return *module_; }
+
+        // TODO improve upon this approach
+        Parameters& get_callee_module(const std::string& name) { return *children_[name]; }
+
+        void incorporate(std::set<std::string>& visited) {
+            visited.insert(module_->name());
+            size_t i = 0;
+            for (auto& t: module_->parameters(true)) {
+                Tensor& accum = grad_accumulator_[i++];
+                t.mutable_grad().add_(accum);
+                accum.zero_();
+            }
+            for (auto& child : children_) {
+                child.second->incorporate(visited);
+            }
+        }
+
+    private:
+        shared_ptr<torch::nn::Module> module_;
+        unordered_map<std::string, unique_ptr<Parameters>> children_;
+        vector<Tensor> grad_accumulator_;
+    };
+
     /**
      * Immutable execution of a generative function.
      *

@@ -27,7 +27,7 @@ See the License for the specific language governing permissions and
 #include <torch/torch.h>
 #include <torch/csrc/autograd/functions/utils.h>
 
-using std::any_cast;
+using std::any, std::any_cast;
 using std::vector, std::pair;
 using std::cout, std::endl;
 using std::shared_ptr, std::unique_ptr, std::make_shared;
@@ -35,6 +35,7 @@ using std::optional, std::make_optional;
 
 using torch::Tensor;
 using torch::nn::Module;
+using torch::optim::OptimizerParamGroup;
 using torch::autograd::AutogradContext;
 using torch::autograd::variable_list;
 using torch::autograd::Node;
@@ -145,15 +146,18 @@ namespace gen::dml {
     public:
         typedef typename Model::return_type return_type;
         typedef typename Model::args_type args_type;
+        typedef typename Model::parameters_type parameters_type;
         typedef std::pair<DMLTrace<Model>, double> update_return_type;
 
-        explicit DMLTrace(const args_type &args, bool prepare_for_gradients, bool assert_retval_grad) :
+        explicit DMLTrace(const args_type &args, bool prepare_for_gradients, bool assert_retval_grad,
+                          const parameters_type& parameters) :
                 subtraces_{make_shared<Trie<shared_ptr<Trace>>>()},
                 score_{0.0},
                 assert_retval_grad_{assert_retval_grad},
                 args_{maybe_track_args(args, prepare_for_gradients)},
                 prepared_for_gradients_{prepare_for_gradients},
-                scaler_{1} {}
+                scaler_{1},
+                parameters_{parameters} {}
 
         DMLTrace(const DMLTrace &other) = default;
 
@@ -226,24 +230,53 @@ namespace gen::dml {
 
         double &get_scaler_reference() { return scaler_; }
 
-        std::any gradients(std::any retval_grad_any, double scaler) override {
-            scaler_ = scaler; // NOTE: not threadsafe
-            // TODO add all parameters as inputs; we can require users to register their torch modules for now..
+        any gradients(any retval_grad_any, double scaler) override {
+
             if (!prepared_for_gradients_) {
                 throw std::logic_error("not ready for gradients");
             }
+
+            // set the scaler_ so that recursive calls to gradients() will pass along this value
+            // NOTE: not thread safe, but this is okay, traces aren't intended to be thread safe
+            scaler_ = scaler;
+
             return_type retval = any_cast<return_type>(get_return_value());
             return_type retval_grad = std::any_cast<return_type>(retval_grad_any);
             vector<Tensor> retval_unrolled = unroll(retval);
             vector<Tensor> retval_grad_unrolled = unroll(retval_grad);
-            vector<Tensor> args_unrolled = unroll(get_args());
-            vector<Tensor> args_grad_unrolled = torch::autograd::grad(retval_unrolled, args_unrolled,
-                                                                      retval_grad_unrolled);
+
+            vector<Tensor> inputs = unroll(get_args());
+            size_t num_args = inputs.size();
+
+            // this means all recursive parameters of children modules, but not any children generative functions..
+            vector<Tensor> local_parameter_tensors = parameters_.parameters();
+            size_t num_local_parameters = local_parameter_tensors.size();
+
+            // combine arguments and gradients
+            inputs.insert(inputs.end(), local_parameter_tensors.begin(), local_parameter_tensors.end());
+
+            // do the backward pass. this recursively invokes gradients() for each subtrace
+            vector<Tensor> input_grads = torch::autograd::grad(retval_unrolled, inputs, retval_grad_unrolled);
+
+            // split arguments and gradients
+            // TODO pass start and end pointers recursively to roll calls instead of allocating a new vector here
+            vector<Tensor> args_grad_unrolled;
+            for (size_t i = 0; i < num_args; ++i) {
+                args_grad_unrolled.emplace_back(input_grads[i]);
+            }
             args_type args_grad = roll(args_grad_unrolled, get_args());
+
+            // accumulate parameter gradients
+            for (size_t i = num_args; i < num_args + num_local_parameters; ++i) {
+                local_parameter_tensors[i].add_(input_grads[i], scaler);
+            }
+
             return args_grad; // TODO detach?
         }
 
     private:
+        // TODO why are we using shared_pointers here? we don't necessarily need Traces to be
+        // TODO copy-constructible...
         pair<const args_type &, optional<shared_ptr<const args_type>>> args_;
         shared_ptr<Trie<shared_ptr<Trace>>> subtraces_;
         double score_;
@@ -251,7 +284,9 @@ namespace gen::dml {
         bool prepared_for_gradients_;
         bool assert_retval_grad_;
         double scaler_; // for parameter gradients
+        const parameters_type& parameters_;
     };
+
 
     // *******************
     // * Simulate tracer *
@@ -261,25 +296,38 @@ namespace gen::dml {
     class DMLSimulateTracer {
     public:
         typedef typename Model::args_type args_type;
+        typedef typename Model::parameters_type parameters_type;
 
         explicit DMLSimulateTracer(Generator &gen, const args_type &args,
+                                   const parameters_type& parameters,
                                    bool prepare_for_gradients, bool assert_retval_grad) :
                 finished_(false),
                 gen_{gen},
-                trace_{args, prepare_for_gradients, assert_retval_grad},
+                trace_{args, prepare_for_gradients, assert_retval_grad, parameters},
                 prepare_for_gradients_{prepare_for_gradients},
-                scaler_reference_{trace_.get_scaler_reference()} {}
+                scaler_reference_{trace_.get_scaler_reference()},
+                parameters_{parameters} {}
 
         const args_type &get_args() const { return trace_.get_args(); }
 
-        template<typename CalleeType>
+        template<typename CalleeType, typename CalleeParametersType = std::nullptr_t>
         typename CalleeType::return_type
-        call(Address &&address, CalleeType &&gen_fn_with_args) {
+        call(Address &&address, CalleeType &&gen_fn_with_args, CalleeParametersType& parameters = nullptr) {
             assert(!finished_); // if this assertion fails, it is a bug in DML not user code
-            Trace &subtrace = trace_.add_subtrace(address, gen_fn_with_args.simulate(gen_, prepare_for_gradients_));
+            Trace &subtrace = trace_.add_subtrace(address,
+                                                  gen_fn_with_args.simulate(gen_, parameters, prepare_for_gradients_));
             const auto &value = any_cast<typename CalleeType::return_type>(subtrace.get_return_value());
-            auto node = MyNode<typename CalleeType::args_type, typename CalleeType::return_type>(subtrace,
-                                                                                                 scaler_reference_);
+
+            // TODO we also want to record something in the this MyNode object that will let us, in gradients(), set the
+            // TODO appropriate sub-parameters object for use by the corresponding MyGradNode...
+            // instead of passing the parameter object here, the user would need to pass a function that extracts
+            // it from the parent object, and this function would need to work with the accumulator object as well..
+
+            // we could use a second Trie object, that stores mutable references to parameters objects,
+            //
+            auto node = MyNode<typename CalleeType::args_type, typename CalleeType::return_type>(
+                    subtrace, scaler_reference_);
+
             // NOTE: gen_fn_with_args.get_args() returns args that are tracked as part of the autograd graph
             auto tracked_value_unrolled = node(unroll(gen_fn_with_args.get_args()));
             typename CalleeType::return_type tracked_value = roll(tracked_value_unrolled, value);
@@ -292,12 +340,16 @@ namespace gen::dml {
             return std::move(trace_);
         }
 
+        // for use in the body of the exec() function
+        const parameters_type& get_parameters() { return parameters_; }
+
     private:
         bool finished_;
         Generator &gen_;
         DMLTrace<Model> trace_;
         bool prepare_for_gradients_;
         double &scaler_reference_;
+        const parameters_type& parameters_;
     };
 
     // *******************
@@ -308,25 +360,28 @@ namespace gen::dml {
     class DMLGenerateTracer {
     public:
         typedef typename Model::args_type args_type;
+        typedef typename Model::parameters_type parameters_type;
 
         explicit DMLGenerateTracer(Generator &gen, const args_type &args, const ChoiceTrie &constraints,
+                                   const parameters_type& parameters,
                                    bool prepare_for_gradients, bool assert_retval_grad) :
                 finished_(false),
                 gen_{gen},
-                trace_{args, prepare_for_gradients, assert_retval_grad},
+                trace_{args, prepare_for_gradients, assert_retval_grad, parameters},
                 log_weight_(0.0),
                 constraints_(constraints),
                 prepare_for_gradients_{prepare_for_gradients},
-                scaler_reference_{trace_.get_scaler_reference()} {}
+                scaler_reference_{trace_.get_scaler_reference()},
+                parameters_{parameters} {}
 
         const args_type &get_args() const { return trace_.get_args(); }
 
-        template<typename CalleeType>
+        template<typename CalleeType, typename CalleeParametersType = std::nullptr_t>
         typename CalleeType::return_type
-        call(Address &&address, CalleeType &&gen_fn_with_args) {
+        call(Address &&address, CalleeType &&gen_fn_with_args, CalleeParametersType& parameters = nullptr) {
             assert(!finished_); // if this assertion fails, it is a bug in DML not user code
             ChoiceTrie sub_constraints{constraints_.get_subtrie(address, false)};
-            auto subtrace_and_log_weight = gen_fn_with_args.generate(gen_, sub_constraints, prepare_for_gradients_);
+            auto subtrace_and_log_weight = gen_fn_with_args.generate(gen_, parameters, sub_constraints, prepare_for_gradients_);
             Trace &subtrace = trace_.add_subtrace(address, std::move(subtrace_and_log_weight.first));
             const auto &value = any_cast<typename CalleeType::return_type>(subtrace.get_return_value());
             auto node = MyNode<typename CalleeType::args_type, typename CalleeType::return_type>(subtrace,
@@ -337,12 +392,13 @@ namespace gen::dml {
             return tracked_value;
         }
 
-
         std::pair<DMLTrace<Model>, double> finish(typename Model::return_type value) {
             finished_ = true;
             trace_.set_value(value);
             return std::pair(std::move(trace_), log_weight_);
         }
+
+        const parameters_type& get_parameters() { return parameters_; }
 
     private:
         double log_weight_;
@@ -352,12 +408,14 @@ namespace gen::dml {
         const ChoiceTrie &constraints_;
         bool prepare_for_gradients_;
         double &scaler_reference_;
+        const parameters_type& parameters_;
     };
 
     // *******************
     // * Update tracer *
     // *******************
 
+    // TODO add integration with parameter store
     template<typename Generator, typename Model>
     class DMLUpdateTracer {
     public:
@@ -365,6 +423,7 @@ namespace gen::dml {
                 : finished_(false), gen_{gen}, trace_{},
                   log_weight_(0.0), constraints_(constraints) {}
 
+        // TODO add third argument for parameter store for calllee (see simulate above)
         template<typename CalleeType>
         typename CalleeType::return_type
         call(Address &&address, CalleeType &&gen_fn_with_args) {
@@ -412,55 +471,51 @@ namespace gen::dml {
     // * DML generative function *
     // ***************************
 
-    class DMLGenFnModule : public torch::nn::Module {
-    };
-
-/**
- * Abstract type for a generative function constructed with the Dynamic Modeling Language (DML), which is embedded in C++.
- *
- * Each DML generative function is a concrete type that inherits from `DMLGenFn` and has an `exec` member function.
- *
- * @tparam Model Type of the generative function, which must inherit from `DMLGenFn` via the CRTP.
- * @tparam ArgsType Type of the input to the generative function.
- * @tparam ReturnType Type of the return value of hte generative function.
- */
-    template<typename Model, typename ArgsType, typename ReturnType>
+    /**
+     * Abstract type for a generative function constructed with the Dynamic Modeling Language (DML), which is embedded in C++.
+     *
+     * Each DML generative function is a concrete type that inherits from `DMLGenFn` and has an `exec` member function.
+     *
+     * @tparam Model Type of the generative function, which must inherit from `DMLGenFn` via the CRTP.
+     * @tparam ArgsType Type of the input to the generative function.
+     * @tparam ReturnType Type of the return value of hte generative function.
+     */
+    template<typename Model, typename ArgsType, typename ReturnType, typename ModuleType>
     class DMLGenFn {
     private:
         const ArgsType args_;
         const bool assert_retval_grad_;
-        const DMLGenFnModule module_;
     public:
         typedef ArgsType args_type;
         typedef ReturnType return_type;
+        typedef ModuleType module_type;
+        typedef Parameters<ModuleType> parameters_type;
         typedef DMLTrace<Model> trace_type;
 
-        explicit DMLGenFn(ArgsType args, bool assert_retval_grad = false) : args_(args),
-                                                                            assert_retval_grad_(assert_retval_grad) {}
+        explicit DMLGenFn(ArgsType args, bool assert_retval_grad = false)
+            : args_(args), assert_retval_grad_(assert_retval_grad) {}
 
         const ArgsType &get_args() const {
             return args_;
         }
 
-        DMLGenFnModule get_torch_nn_module() const {
-            return module_;
-        }
-
         template<typename Generator>
-        DMLTrace<Model> simulate(Generator &gen, bool prepare_for_gradients) const {
+        DMLTrace<Model> simulate(Generator &gen, const parameters_type& parameters, bool prepare_for_gradients) const {
             c10::InferenceMode guard{
                     !prepare_for_gradients}; // inference mode is on if we are not preparing for gradients
-            auto tracer = DMLSimulateTracer<Generator, Model>{gen, args_, prepare_for_gradients, assert_retval_grad_};
+            auto tracer = DMLSimulateTracer<Generator, Model>{gen, args_, parameters, prepare_for_gradients,
+                                                              assert_retval_grad_};
             auto value = static_cast<const Model *>(this)->exec(tracer);
             return tracer.finish(value);
         }
 
         template<typename Generator>
         std::pair<DMLTrace<Model>, double> generate(
-                Generator &gen, const ChoiceTrie &constraints, bool prepare_for_gradients) const {
+                Generator &gen, const parameters_type& parameters,
+                const ChoiceTrie &constraints, bool prepare_for_gradients) const {
             c10::InferenceMode guard{
                     !prepare_for_gradients}; // inference mode is on if we are not preparing for gradients
-            auto tracer = DMLGenerateTracer<Generator, Model>{gen, args_, constraints, prepare_for_gradients,
+            auto tracer = DMLGenerateTracer<Generator, Model>{gen, args_, parameters, constraints, prepare_for_gradients,
                                                               assert_retval_grad_};
             auto value = static_cast<const Model *>(this)->exec(tracer);
             return tracer.finish(value);

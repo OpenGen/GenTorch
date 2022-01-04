@@ -124,14 +124,14 @@ namespace gen::distributions::normal {
         }
 
         template<class Generator>
-        NormalTrace simulate(Generator &gen, bool prepare_for_gradients=false) const {
+        NormalTrace simulate(Generator &gen, nullptr_t unused, bool prepare_for_gradients=false) const {
             Tensor value = dist_.sample(gen);
             return {std::move(value), dist_};
         }
 
         template<class Generator>
         std::pair<NormalTrace, double>
-        generate(Generator &gen, const ChoiceTrie& constraints, bool prepare_for_gradients=false) const {
+        generate(Generator &gen, nullptr_t unused, const ChoiceTrie& constraints, bool prepare_for_gradients=false) const {
             Tensor value;
             double log_weight;
             if (constraints.has_value()) {
