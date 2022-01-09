@@ -28,3 +28,6 @@ include(CTest)
 include(Catch)
 catch_discover_tests(testlib)
 
+# for experimentation
+add_executable(scrap scrap.cpp)
+target_link_libraries(scrap PRIVATE gen_library)

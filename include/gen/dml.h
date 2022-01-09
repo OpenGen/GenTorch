@@ -489,7 +489,7 @@ namespace gen::dml {
         typedef ArgsType args_type;
         typedef ReturnType return_type;
         typedef ModuleType module_type;
-        typedef Parameters<ModuleType> parameters_type;
+//        typedef Parameters<ModuleType> parameters_type;
         typedef DMLTrace<Model> trace_type;
 
         explicit DMLGenFn(ArgsType args, bool assert_retval_grad = false)
