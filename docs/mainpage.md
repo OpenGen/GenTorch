@@ -2,14 +2,18 @@
 
 Basic types:
 
-- `::Address`
+- gen::Address
 
-- `::Trie`
+- gen::Trie
 
-- `::Trace`
+- gen::Module
+
+- gen::Trace
+
+- gen::GradientAccumulator
 
 Types of generative functions:
 
-- `::DMLGenFn`
+- gen::dml::DMLGenFn
 
-- `::Normal`
+- gen::distributions::normal::Normal
