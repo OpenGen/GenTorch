@@ -16,7 +16,7 @@ See the License for the specific language governing permissions and
 #include <catch2/catch.hpp>
 #include <gen/trie.h>
 #include <gen/dml.h>
-#include <gen/normal.h>
+#include <gen/distributions/normal.h>
 
 #include <cassert>
 #include <iostream>
@@ -186,19 +186,19 @@ TEST_CASE("gradients with no parameters", "[gradients, dml]") {
     GradientAccumulator accum {parameters};
     std::random_device rd{};
     std::mt19937 gen{rd()};
-    Tensor x = tensor(1.0);
-    Tensor y = tensor(1.0);
+    auto x = tensor(1.0);
+    auto y = tensor(1.0);
+    auto z1 = tensor(1.0);
+    auto retval_grad = tensor(1.123);
     auto model = GradientsTestGenFn(x, y);
     ChoiceTrie constraints {};
-    Tensor z1 = tensor(1.0);
     constraints.set_value({"z1"}, z1);
     auto [trace, log_weight] = model.generate(gen, parameters, constraints, true);
-    Tensor retval_grad = tensor(1.123);
     auto arg_grads = any_cast<std::pair<Tensor,Tensor>>(trace.gradients(retval_grad, 1.0, accum));
     NormalDist dist {x + y, tensor(1.0)};
     auto logpdf_grad = dist.log_density_gradient(z1);
-    Tensor expected_x_grad = tensor(1.123) + std::get<1>(logpdf_grad);
-    Tensor expected_y_grad = tensor(1.123 * 2) + std::get<1>(logpdf_grad);
+    Tensor expected_x_grad = 1.123 + std::get<1>(logpdf_grad);
+    Tensor expected_y_grad = 1.123 * 2 + std::get<1>(logpdf_grad);
     REQUIRE(arg_grads.first.allclose(expected_x_grad));
     REQUIRE(arg_grads.second.allclose(expected_y_grad));
 }
@@ -211,10 +211,8 @@ namespace gen::tests::dml {
 
 struct ParametersTestCalleeModule : public gen::Module {
     Tensor theta1;
-//  torch::nn::Linear fc1 {nullptr};
     ParametersTestCalleeModule() {
         theta1 = register_parameter("theta1", tensor(1.0));
-//      fc1 = register_torch_module("fc1", torch::nn::Linear(2, 3));
     }
 };
 
@@ -225,7 +223,6 @@ public:
     return_type forward(T& tracer) {
         auto& parameters = tracer.get_parameters();
         const auto& x = tracer.get_args();
-//        auto y = parameters.fc1->forward(torch::relu(x));
         auto mu = x + parameters.theta1;
         auto z = tracer.call({"z1"}, Normal(mu, tensor(2.0)));
         return z + mu;
@@ -234,11 +231,9 @@ public:
 
 struct ParametersTestCallerModule : public gen::Module {
     Tensor theta2;
-//    torch::nn::Linear fc2 {nullptr};
     shared_ptr<ParametersTestCalleeModule> callee_params {nullptr};
     ParametersTestCallerModule() {
         theta2 = register_parameter("theta2", tensor(3.0));
-//        fc2 = register_torch_module("fc2", torch::nn::Linear(3, 2));
         callee_params = register_gen_module("callee_params", std::make_shared<ParametersTestCalleeModule>());
     }
 };
@@ -250,7 +245,6 @@ public:
     return_type forward(T& tracer) {
         auto& parameters = tracer.get_parameters();
         const auto& x = tracer.get_args();
-//        auto y = parameters.fc2->forward(torch::relu(x));
         auto z = tracer.call({"callee_addr"}, ParametersTestCallee(x), *parameters.callee_params);
         return z + x + parameters.theta2;
     }
@@ -337,8 +331,6 @@ TEST_CASE("parameter gradients and torch modules", "[dml]") {
 
     REQUIRE(parameters.linear->bias.grad().allclose(expected_bias_grad));
 }
-
-
 
 // *****************************************
 // *** multithreaded parameter gradients ***

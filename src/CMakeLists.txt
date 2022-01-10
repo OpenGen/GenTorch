@@ -5,13 +5,18 @@ set(HEADER_LIST
         "${Gen_SOURCE_DIR}/include/gen/parameters.h"
         "${Gen_SOURCE_DIR}/include/gen/trace.h"
         "${Gen_SOURCE_DIR}/include/gen/dml.h"
-        "${Gen_SOURCE_DIR}/include/gen/normal.h")
+        "${Gen_SOURCE_DIR}/include/gen/distributions/distributions.h"
+        "${Gen_SOURCE_DIR}/include/gen/distributions/normal.h"
+        "${Gen_SOURCE_DIR}/include/gen/distributions/bernoulli.h"
+        "${Gen_SOURCE_DIR}/include/gen/distributions/uniform_continuous.h")
 
 add_library(gen_library
         parameters.cpp
         address.cpp
-        normal.cpp
         conversions.cpp
+        distributions/normal.cpp
+        distributions/bernoulli.cpp
+        distributions/uniform_continuous.cpp
         ${HEADER_LIST})
 
 target_include_directories(gen_library PUBLIC ../include)
