@@ -36,7 +36,7 @@ namespace gen::distributions::uniform_continuous {
 
         template<class RNGType>
         Tensor sample(RNGType &rng) const {
-            std::uniform_real_distribution<float> dist{min_, max_};
+            std::uniform_real_distribution<double> dist{min_, max_};
             return tensor(dist(rng));
         }
 
