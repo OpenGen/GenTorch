@@ -35,7 +35,7 @@ namespace gen {
         /**
          * @return the choice trie.
          */
-        [[nodiscard]] virtual Trie<std::any> get_choice_trie() const = 0;
+        [[nodiscard]] virtual ChoiceTrie get_choice_trie() const = 0;
 
         /**
          * @return the log joint density.
