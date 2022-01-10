@@ -1,3 +1,3 @@
-add_executable(scrap simple_monte_carlo.cpp)
-target_link_libraries(scrap PRIVATE gen_library)
-target_compile_features(scrap PRIVATE cxx_std_17)
+add_executable(simple_monte_carlo simple_monte_carlo.cpp)
+target_link_libraries(simple_monte_carlo PRIVATE gen_library)
+target_compile_features(simple_monte_carlo PRIVATE cxx_std_17)
