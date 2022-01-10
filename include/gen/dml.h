@@ -210,7 +210,7 @@ public:
     update_return_type update(Generator &gen, Model& model_with_args,
                               const Trie<shared_ptr<Trace>> &constraints) const {
         auto tracer = DMLUpdateTracer<Generator, Model>(gen, constraints);
-        auto value = model_with_args.exec(tracer);
+        auto value = model_with_args.forward(tracer);
         return tracer.finish(value);
     }
 
@@ -504,10 +504,18 @@ private:
     const ArgsType args_;
     const bool assert_retval_grad_;
 public:
+
+    // part of the generative function interface
     typedef ArgsType args_type;
     typedef ReturnType return_type;
     typedef ParametersType parameters_type;
     typedef DMLTrace<Model> trace_type;
+
+    // for use in call to base class constructor DMLGenFn<M,A,R,P>(..)
+    typedef Model M;
+    typedef args_type A;
+    typedef return_type R;
+    typedef parameters_type P;
 
     explicit DMLGenFn(ArgsType args, bool assert_retval_grad = false)
         : args_(args), assert_retval_grad_(assert_retval_grad) {}
@@ -522,7 +530,7 @@ public:
                 !prepare_for_gradients}; // inference mode is on if we are not preparing for gradients
         auto tracer = DMLSimulateTracer<Generator, Model>{gen, args_, parameters, prepare_for_gradients,
                                                           assert_retval_grad_};
-        auto value = static_cast<Model*>(this)->exec(tracer);
+        auto value = static_cast<Model*>(this)->forward(tracer);
         return tracer.finish(value);
     }
 
@@ -534,7 +542,7 @@ public:
                 !prepare_for_gradients}; // inference mode is on if we are not preparing for gradients
         auto tracer = DMLGenerateTracer<Generator, Model>{gen, args_, parameters, constraints, prepare_for_gradients,
                                                           assert_retval_grad_};
-        auto value = static_cast<Model*>(this)->exec(tracer);
+        auto value = static_cast<Model*>(this)->forward(tracer);
         return tracer.finish(value);
     }
 };

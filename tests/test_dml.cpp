@@ -42,20 +42,19 @@ bool tensor_scalar_bool(Tensor a) {
 
 class Foo : public DMLGenFn<Foo, std::pair<Tensor,int>, Tensor, EmptyModule> {
 public:
-    explicit Foo(Tensor z, int depth) : DMLGenFn<Foo, args_type, return_type, parameters_type>({z, depth}) {}
-
+    explicit Foo(Tensor z, int depth) : DMLGenFn<M,A,R,P>({z, depth}) {}
     template <typename Tracer>
-    return_type exec(Tracer& tracer) const {
-        const auto& [z, depth] = tracer.get_args();
+    return_type forward(Tracer& tracer) const {
         auto& parameters = tracer.get_parameters();
-        const auto x = tensor(0.0);
-        const auto y = tensor(1.0) + z + x;
-        const auto a = tensor(0.0);
-        const Tensor z1 = tracer.call({"z1"}, Normal(a, tensor(1.0)));
-        const Tensor z2 = tracer.call({"z2"}, Normal(z1, tensor(0.1)));
+        const auto& [z, depth] = tracer.get_args();
+        auto x = tensor(0.0);
+        auto y = tensor(1.0) + z + x;
+        auto a = tensor(0.0);
+        auto z1 = tracer.call({"z1"}, Normal(a, tensor(1.0)));
+        auto z2 = tracer.call({"z2"}, Normal(z1, tensor(0.1)));
         Tensor result;
         if (tensor_scalar_bool(z1 < 0.0)) {
-            const Tensor z3 = tracer.call({"recursive"}, Foo(z2, depth + 1), parameters);
+            auto z3 = tracer.call({"recursive"}, Foo(z2, depth + 1), parameters);
             result = x + z1 + y + z2 + z3;
         } else {
             result = x + z1 + y + z2;
@@ -166,21 +165,18 @@ TEST_CASE("multithreaded_generate", "[multithreading, dml]") {
     std::cout << scores << std::endl;
 }
 
-/* gradients test */
+// *******************************************
+// *** gradients with respect to arguments ***
+// *******************************************
 
 class GradientsTestGenFn;
-
-class GradientsTestGenFn : public DMLGenFn<GradientsTestGenFn, std::vector<Tensor>, Tensor, EmptyModule> {
+class GradientsTestGenFn : public DMLGenFn<GradientsTestGenFn, std::pair<Tensor,Tensor>, Tensor, EmptyModule> {
 public:
-    explicit GradientsTestGenFn(Tensor x, Tensor y) :
-        DMLGenFn<GradientsTestGenFn, args_type, return_type, parameters_type>({x, y}) {}
-
+    explicit GradientsTestGenFn(Tensor x, Tensor y) : DMLGenFn<M,A,R,P>({x, y}) {}
     template <typename Tracer>
-    return_type exec(Tracer& tracer) const {
-        const std::vector<Tensor>& args = tracer.get_args();
-        const auto& x = args.at(0);
-        const auto& y = args.at(1);
-        const Tensor z = tracer.call({"z1"}, Normal(x + y, tensor(1.0)));
+    return_type forward(Tracer& tracer) const {
+        const auto& [x, y] = tracer.get_args();
+        auto z = tracer.call({"z1"}, Normal(x + y, tensor(1.0)));
         return z + x + (y * 2.0);
     }
 };
@@ -198,80 +194,161 @@ TEST_CASE("gradients with no parameters", "[gradients, dml]") {
     constraints.set_value({"z1"}, z1);
     auto [trace, log_weight] = model.generate(gen, parameters, constraints, true);
     Tensor retval_grad = tensor(1.123);
-    auto arg_grads = any_cast<std::vector<Tensor>>(trace.gradients(retval_grad, 1.0, accum));
-    std::cout << std::endl;
-    REQUIRE(arg_grads.size() == 2);
+    auto arg_grads = any_cast<std::pair<Tensor,Tensor>>(trace.gradients(retval_grad, 1.0, accum));
     NormalDist dist {x + y, tensor(1.0)};
     auto logpdf_grad = dist.log_density_gradient(z1);
     Tensor expected_x_grad = tensor(1.123) + std::get<1>(logpdf_grad);
     Tensor expected_y_grad = tensor(1.123 * 2) + std::get<1>(logpdf_grad);
-    REQUIRE(arg_grads.at(0).allclose(expected_x_grad));
-    REQUIRE(arg_grads.at(1).allclose(expected_y_grad));
+    REQUIRE(arg_grads.first.allclose(expected_x_grad));
+    REQUIRE(arg_grads.second.allclose(expected_y_grad));
+}
+
+// *********************************************************
+// *** parameter gradients and generative function calls ***
+// *********************************************************
+
+namespace gen::tests::dml {
+
+struct ParametersTestCalleeModule : public gen::Module {
+    Tensor theta1;
+//  torch::nn::Linear fc1 {nullptr};
+    ParametersTestCalleeModule() {
+        theta1 = register_parameter("theta1", tensor(1.0));
+//      fc1 = register_torch_module("fc1", torch::nn::Linear(2, 3));
+    }
+};
+
+class ParametersTestCallee : public DMLGenFn<ParametersTestCallee, Tensor, Tensor, ParametersTestCalleeModule> {
+public:
+    explicit ParametersTestCallee(Tensor x) : DMLGenFn<M,A,R,P>{x} {}
+    template <typename T>
+    return_type forward(T& tracer) {
+        auto& parameters = tracer.get_parameters();
+        const auto& x = tracer.get_args();
+//        auto y = parameters.fc1->forward(torch::relu(x));
+        auto mu = x + parameters.theta1;
+        auto z = tracer.call({"z1"}, Normal(mu, tensor(2.0)));
+        return z + mu;
+    }
+};
+
+struct ParametersTestCallerModule : public gen::Module {
+    Tensor theta2;
+//    torch::nn::Linear fc2 {nullptr};
+    shared_ptr<ParametersTestCalleeModule> callee_params {nullptr};
+    ParametersTestCallerModule() {
+        theta2 = register_parameter("theta2", tensor(3.0));
+//        fc2 = register_torch_module("fc2", torch::nn::Linear(3, 2));
+        callee_params = register_gen_module("callee_params", std::make_shared<ParametersTestCalleeModule>());
+    }
+};
+
+class ParametersTestCaller : public DMLGenFn<ParametersTestCaller, Tensor, Tensor, ParametersTestCallerModule> {
+public:
+    explicit ParametersTestCaller(Tensor x) : DMLGenFn<M,A,R,P>{x} {}
+    template <typename T>
+    return_type forward(T& tracer) {
+        auto& parameters = tracer.get_parameters();
+        const auto& x = tracer.get_args();
+//        auto y = parameters.fc2->forward(torch::relu(x));
+        auto z = tracer.call({"callee_addr"}, ParametersTestCallee(x), *parameters.callee_params);
+        return z + x + parameters.theta2;
+    }
+};
+
+}
+
+TEST_CASE("parameter gradients and generative function calls", "[dml]") {
+
+    gen::tests::dml::ParametersTestCallerModule parameters;
+    auto x = tensor(4.0);
+    auto z1 = tensor(5.0);
+    auto retval_grad = tensor(6.0);
+    double scaler = 7.0;
+
+    // compute expected gradients with respect to theta1 and theta2
+    NormalDist dist {x + parameters.callee_params->theta1, tensor(2.0)};
+    auto log_density_grad = dist.log_density_gradient(z1);
+    Tensor expected_theta1_grad = (std::get<1>(log_density_grad) + retval_grad) * scaler;
+    Tensor expected_theta2_grad = retval_grad * scaler;
+
+    // compute actual gradients with respect to theta1 and theta2
+    GradientAccumulator accum {parameters};
+    gen::tests::dml::ParametersTestCaller model {x};
+    std::random_device rd{};
+    std::mt19937 rng{rd()};
+    ChoiceTrie constraints;
+    constraints.set_value({"callee_addr", "z1"}, z1);
+    auto trace_and_log_weight = model.generate(rng, parameters, constraints, true);
+    auto arg_grads = trace_and_log_weight.first.gradients(retval_grad, scaler, accum);
+    accum.update_module_gradients();
+
+    REQUIRE(parameters.callee_params->theta1.grad().allclose(expected_theta1_grad));
+    REQUIRE(parameters.theta2.grad().allclose(expected_theta2_grad));
 }
 
 
-/* invoking a torch::nn::Module test */
+// *********************************************
+// *** parameter gradients and torch modules ***
+// *********************************************
 
-using std::pair;
 
-struct BarModule : public gen::Module {
-    BarModule() {
-        // register torch modules that we call directly
-        // Construct and register three Linear submodules.
-        fc1 = register_torch_module("fc1", torch::nn::Linear(784, 64));
-        fc2 = register_torch_module("fc2", torch::nn::Linear(64, 32));
-        fc3 = register_torch_module("fc3", torch::nn::Linear(32, 10));
-    }
-    torch::nn::Linear fc1{nullptr}, fc2{nullptr}, fc3{nullptr};
-};
+namespace gen::tests::dml {
 
-class Bar : public DMLGenFn<Bar, pair<Tensor,Tensor>, Tensor, BarModule> {
-public:
-    explicit Bar(Tensor x, Tensor y) : DMLGenFn<Bar, args_type, return_type, parameters_type>({x, y}) {}
+    struct ParametersTestTorchCallerModule : public gen::Module {
+        torch::nn::Linear linear {nullptr};
+        ParametersTestTorchCallerModule() {
+            linear = register_torch_module("linear", torch::nn::Linear(3, 2));
+        }
+    };
 
-    template <typename Tracer>
-    return_type exec(Tracer& tracer) {
-        auto& parameters = tracer.get_parameters();
-        auto& [x, y] = tracer.get_args();
-        Tensor h1 = parameters.fc1->forward(torch::relu(x));
-        Tensor h2 = parameters.fc2->forward(torch::relu(h1));
-        Tensor h3 = parameters.fc3->forward(torch::relu(h2));
-        Tensor mu = torch::sum(h3);
-        const Tensor z = tracer.call({"z1"}, Normal(mu, tensor(1.0)));
-        return z + mu;
-    }
-};
+    class ParametersTestTorchCaller : public DMLGenFn<ParametersTestTorchCaller, Tensor, Tensor, ParametersTestTorchCallerModule> {
+    public:
+        explicit ParametersTestTorchCaller(Tensor x) : DMLGenFn<M,A,R,P>{x} {}
+        template <typename T>
+        return_type forward(T& tracer) {
+            auto& parameters = tracer.get_parameters();
+            const auto& x = tracer.get_args();
+            auto y = parameters.linear->forward(x);
+            return y;
+        }
+    };
 
-struct BazModule : public gen::Module {
-    BazModule() {
-        fc1 = register_torch_module("fc1", torch::nn::Linear(784, 64));
-        bar = register_gen_module("bar", make_shared<BarModule>());
-    }
-    torch::nn::Linear fc1 {nullptr};
-    shared_ptr<BarModule> bar {nullptr};
-};
+}
 
-class Baz : public DMLGenFn<Baz, pair<Tensor,Tensor>, Tensor, BazModule> {
-public:
-    explicit Baz(Tensor x, Tensor y) : DMLGenFn<Baz, args_type, return_type, parameters_type>({x, y}) {}
+TEST_CASE("parameter gradients and torch modules", "[dml]") {
 
-    template <typename Tracer>
-    return_type exec(Tracer& tracer) {
-        auto& parameters = tracer.get_parameters();
-        auto& [x, y] = tracer.get_args();
-        Tensor h1 = parameters.fc1->forward(torch::relu(x));
-        Tensor mu = torch::sum(h1);
-        const Tensor z = tracer.call({"bar_addr"}, Bar(x, y), *parameters.bar);
-        return z + mu;
-    }
-};
+    gen::tests::dml::ParametersTestTorchCallerModule parameters;
+    auto x = tensor({1.0, 2.0, 3.0});
+    auto retval_grad = tensor({4.0, 5.0});
+    double scaler = 6.0;
 
-void simulate_and_gradients(int n, BazModule& parameters, GradientAccumulator& accum) {
+    // compute expected gradients with respect to theta1 and theta2
+    Tensor expected_bias_grad = tensor({1.0, 1.0}) * retval_grad * scaler;
+
+    // compute actual gradients with respect to theta1 and theta2
+    GradientAccumulator accum {parameters};
+    gen::tests::dml::ParametersTestTorchCaller model {x};
     std::random_device rd{};
     std::mt19937 rng{rd()};
-    Tensor x = torch::rand({784});
-    Tensor y = torch::rand({4}); // unused
-    Baz model{x, y};
+    auto trace = model.simulate(rng, parameters, true);
+    auto arg_grads = trace.gradients(retval_grad, scaler, accum);
+    accum.update_module_gradients();
+
+    REQUIRE(parameters.linear->bias.grad().allclose(expected_bias_grad));
+}
+
+
+
+// *****************************************
+// *** multithreaded parameter gradients ***
+// *****************************************
+
+void simulate_and_gradients(int n, gen::tests::dml::ParametersTestCallerModule& parameters, GradientAccumulator& accum) {
+    std::random_device rd{};
+    std::mt19937 rng{rd()};
+    Tensor x = tensor(1.0);
+    gen::tests::dml::ParametersTestCaller model {x};
     for (int i = 0; i < n; i++) {
         auto trace = model.simulate(rng, parameters, true);
         trace.gradients(tensor(1.0), 1.0, accum);
@@ -280,22 +357,29 @@ void simulate_and_gradients(int n, BazModule& parameters, GradientAccumulator& a
 
 TEST_CASE("multithreaded simulate and gradients", "[dml, parameters, multithreaded]") {
 
-    BazModule parameters;
+    gen::tests::dml::ParametersTestCallerModule parameters;
     torch::optim::SGD sgd {parameters.all_parameters(), torch::optim::SGDOptions(0.1)};
 
-    GradientAccumulator accum1 {parameters};
-    GradientAccumulator accum2 {parameters};
+    size_t num_threads = 20;
+
+    std::vector<GradientAccumulator> accums;
+    for (int i = 0; i < num_threads; i++) {
+        accums.emplace_back(GradientAccumulator{parameters});
+    };
 
     // NOTE: in a real application we would reuse threads across iterations (e.g. thread pool)
     for (int iter = 0; iter < 10; iter++) {
-        std::thread thread1 {simulate_and_gradients, 10, std::ref(parameters), std::ref(accum1)};
-        std::thread thread2 {simulate_and_gradients, 10, std::ref(parameters), std::ref(accum2)};
-        thread1.join();
-        thread2.join();
-        accum1.update_module_gradients();
-        accum2.update_module_gradients();
+        std::vector<std::thread> threads;
+        for (int i = 0; i < num_threads; i++) {
+            threads.emplace_back(std::thread(simulate_and_gradients, 10, std::ref(parameters), std::ref(accums[i])));
+        }
+        for (auto& thread : threads) {
+            thread.join();
+        }
+        for (auto& accum : accums) {
+            accum.update_module_gradients();
+        }
         sgd.step();
     }
-
 
 }
