@@ -54,3 +54,7 @@ if((CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME OR GEN_BUILD_TESTING)
         AND BUILD_TESTING)
     add_subdirectory(tests)
 endif()
+
+
+# Examples
+add_subdirectory(examples)
