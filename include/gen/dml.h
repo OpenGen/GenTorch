@@ -73,7 +73,6 @@ struct MyGradNode : public Node {
         return_value_type return_value_grad = roll(unrolled_return_value_grad, return_value);
         auto args_grad = any_cast<args_type>(subtrace_.gradients(
                 return_value_grad, *helper_.scaler_ptr_, *helper_.accumulator_ptr_));
-        std::cout << "inside MyGradNode" << std::endl;
         return unroll(args_grad);
     }
 
@@ -158,7 +157,7 @@ public:
     typedef std::pair<DMLTrace<Model>, double> update_return_type;
 
     explicit DMLTrace(const args_type &args, bool prepare_for_gradients, bool assert_retval_grad,
-                      const parameters_type& parameters) :
+                      parameters_type& parameters) :
             subtraces_{make_shared<Trie<shared_ptr<Trace>>>()},
             score_{0.0},
             assert_retval_grad_{assert_retval_grad},
@@ -208,7 +207,7 @@ public:
     }
 
     template<typename Generator>
-    update_return_type update(Generator &gen, const Model &model_with_args,
+    update_return_type update(Generator &gen, Model& model_with_args,
                               const Trie<shared_ptr<Trace>> &constraints) const {
         auto tracer = DMLUpdateTracer<Generator, Model>(gen, constraints);
         auto value = model_with_args.exec(tracer);
@@ -266,7 +265,9 @@ public:
 
         // do the backward pass. this recursively invokes gradients() for each subtrace
         // NOTE: the returned input grads do not include parameters for callee generative functions
-        vector<Tensor> input_grads = torch::autograd::grad(retval_unrolled, inputs, retval_grad_unrolled);
+        // TODO check why we are setting allow_unused to true
+        vector<Tensor> input_grads = torch::autograd::grad(retval_unrolled, inputs, retval_grad_unrolled,
+                                                           {}, false, true);
 
         // read off argument gradients
         vector<Tensor> args_grad_unrolled;
@@ -279,8 +280,10 @@ public:
         // read off local parameter gradients and increment the accumulators
         assert(i == num_args);
         for (auto it = accumulator.begin(parameters_); it != accumulator.end(parameters_); ++it) {
-            (*it).add_(input_grads[i], scaler);
+            assert((*it).sizes().equals(input_grads[i].sizes()));
+            (*it).add_(input_grads[i++], scaler);
         }
+        assert(i == input_grads.size());
 
         return args_grad; // TODO detach?
     }
@@ -295,7 +298,7 @@ private:
     bool prepared_for_gradients_;
     bool assert_retval_grad_;
     std::unique_ptr<GradientHelper> helper_;
-    const parameters_type& parameters_;
+    parameters_type& parameters_;
 };
 
 
@@ -310,7 +313,7 @@ public:
     typedef typename Model::parameters_type parameters_type;
 
     explicit DMLSimulateTracer(Generator &gen, const args_type &args,
-                               const parameters_type& parameters,
+                               parameters_type& parameters,
                                bool prepare_for_gradients, bool assert_retval_grad) :
             finished_(false),
             gen_{gen},
@@ -351,7 +354,7 @@ public:
     }
 
     // for use in the body of the exec() function
-    const parameters_type& get_parameters() { return parameters_; }
+    parameters_type& get_parameters() { return parameters_; }
 
 private:
     bool finished_;
@@ -359,7 +362,7 @@ private:
     DMLTrace<Model> trace_;
     bool prepare_for_gradients_;
     const GradientHelper& helper_ref_;
-    const parameters_type& parameters_;
+    parameters_type& parameters_;
 };
 
 // *******************
@@ -372,7 +375,7 @@ public:
     typedef typename Model::args_type args_type;
     typedef typename Model::parameters_type parameters_type;
 
-    explicit DMLGenerateTracer(Generator &gen, const args_type &args, const parameters_type& parameters,
+    explicit DMLGenerateTracer(Generator &gen, const args_type &args, parameters_type& parameters,
                                const ChoiceTrie &constraints, bool prepare_for_gradients, bool assert_retval_grad) :
             finished_(false),
             gen_{gen},
@@ -413,7 +416,7 @@ public:
         return std::pair(std::move(trace_), log_weight_);
     }
 
-    const parameters_type& get_parameters() { return parameters_; }
+    parameters_type& get_parameters() { return parameters_; }
 
 private:
     double log_weight_;
@@ -423,7 +426,7 @@ private:
     const ChoiceTrie &constraints_;
     bool prepare_for_gradients_;
     const GradientHelper& helper_ref_;
-    const parameters_type& parameters_;
+    parameters_type& parameters_;
 };
 
 // *******************
@@ -514,24 +517,24 @@ public:
     }
 
     template<typename Generator>
-    DMLTrace<Model> simulate(Generator &gen, const parameters_type& parameters, bool prepare_for_gradients) const {
+    DMLTrace<Model> simulate(Generator &gen, parameters_type& parameters, bool prepare_for_gradients) {
         c10::InferenceMode guard{
                 !prepare_for_gradients}; // inference mode is on if we are not preparing for gradients
         auto tracer = DMLSimulateTracer<Generator, Model>{gen, args_, parameters, prepare_for_gradients,
                                                           assert_retval_grad_};
-        auto value = static_cast<const Model *>(this)->exec(tracer);
+        auto value = static_cast<Model*>(this)->exec(tracer);
         return tracer.finish(value);
     }
 
     template<typename Generator>
     std::pair<DMLTrace<Model>, double> generate(
-            Generator &gen, const parameters_type& parameters,
-            const ChoiceTrie &constraints, bool prepare_for_gradients) const {
+            Generator &gen, parameters_type& parameters,
+            const ChoiceTrie &constraints, bool prepare_for_gradients) {
         c10::InferenceMode guard{
                 !prepare_for_gradients}; // inference mode is on if we are not preparing for gradients
         auto tracer = DMLGenerateTracer<Generator, Model>{gen, args_, parameters, constraints, prepare_for_gradients,
                                                           assert_retval_grad_};
-        auto value = static_cast<const Model *>(this)->exec(tracer);
+        auto value = static_cast<Model*>(this)->exec(tracer);
         return tracer.finish(value);
     }
 };

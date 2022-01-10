@@ -99,7 +99,7 @@ void do_simulate(int idx, int n, std::vector<double>& scores, EmptyModule& param
     double score = 0.0;
     for (int j = 0; j < n; j++) {
         Tensor z = tensor(1.0, TensorOptions().dtype(torch::kFloat64));
-        const auto model = Foo(z, 0);
+        auto model = Foo(z, 0);
         const auto trace = model.simulate(gen, parameters, false);
         score += trace.get_score();
     }
@@ -112,7 +112,7 @@ void do_generate(int idx, int n, std::vector<double>& scores, const ChoiceTrie& 
     double total_log_weight = 0.0;
     for (int j = 0; j < n; j++) {
         Tensor z = tensor(1.0, TensorOptions().dtype(torch::kFloat64));
-        const auto model = Foo(z, 0);
+        auto model = Foo(z, 0);
         auto trace_and_log_weight = model.generate(gen, parameters, constraints, false);
         auto trace = std::move(trace_and_log_weight.first);
         double log_weight = trace_and_log_weight.second;
@@ -192,7 +192,7 @@ TEST_CASE("gradients with no parameters", "[gradients, dml]") {
     std::mt19937 gen{rd()};
     Tensor x = tensor(1.0);
     Tensor y = tensor(1.0);
-    const auto model = GradientsTestGenFn(x, y);
+    auto model = GradientsTestGenFn(x, y);
     ChoiceTrie constraints {};
     Tensor z1 = tensor(1.0);
     constraints.set_value({"z1"}, z1);
@@ -230,7 +230,7 @@ public:
     explicit Bar(Tensor x, Tensor y) : DMLGenFn<Bar, args_type, return_type, parameters_type>({x, y}) {}
 
     template <typename Tracer>
-    return_type exec(Tracer& tracer) const {
+    return_type exec(Tracer& tracer) {
         auto& parameters = tracer.get_parameters();
         auto& [x, y] = tracer.get_args();
         Tensor h1 = parameters.fc1->forward(torch::relu(x));
@@ -256,7 +256,7 @@ public:
     explicit Baz(Tensor x, Tensor y) : DMLGenFn<Baz, args_type, return_type, parameters_type>({x, y}) {}
 
     template <typename Tracer>
-    return_type exec(Tracer& tracer) const {
+    return_type exec(Tracer& tracer) {
         auto& parameters = tracer.get_parameters();
         auto& [x, y] = tracer.get_args();
         Tensor h1 = parameters.fc1->forward(torch::relu(x));
@@ -265,22 +265,37 @@ public:
         return z + mu;
     }
 };
-//
-//TEST_CASE("simulate with parameters", "[dml, parameters]") {
-//
-//    torch::optim::SGD sgd;
-//
-//    MyParameterStore parameter_store {};
-//
-//    std::random_device rd{};
-//    std::mt19937 rng{rd()};
-//
-//    Tensor x = torch::rand({784});
-//    GenFnWithParams model {x};
-//    auto trace = model.simulate(rng, true, parameter_store);
-//
-//    std::cout << trace.get_choice_trie() << std::endl;
-//
-//    auto x_grad = any_cast<Tensor>(trace.gradients(tensor(1.0), 1.0));
-//    std::cout << x_grad << std::endl;
-//}
+
+void simulate_and_gradients(int n, BazModule& parameters, GradientAccumulator& accum) {
+    std::random_device rd{};
+    std::mt19937 rng{rd()};
+    Tensor x = torch::rand({784});
+    Tensor y = torch::rand({4}); // unused
+    Baz model{x, y};
+    for (int i = 0; i < n; i++) {
+        auto trace = model.simulate(rng, parameters, true);
+        trace.gradients(tensor(1.0), 1.0, accum);
+    }
+}
+
+TEST_CASE("multithreaded simulate and gradients", "[dml, parameters, multithreaded]") {
+
+    BazModule parameters;
+    torch::optim::SGD sgd {parameters.all_parameters(), torch::optim::SGDOptions(0.1)};
+
+    GradientAccumulator accum1 {parameters};
+    GradientAccumulator accum2 {parameters};
+
+    // NOTE: in a real application we would reuse threads across iterations (e.g. thread pool)
+    for (int iter = 0; iter < 10; iter++) {
+        std::thread thread1 {simulate_and_gradients, 10, std::ref(parameters), std::ref(accum1)};
+        std::thread thread2 {simulate_and_gradients, 10, std::ref(parameters), std::ref(accum2)};
+        thread1.join();
+        thread2.join();
+        accum1.update_module_gradients();
+        accum2.update_module_gradients();
+        sgd.step();
+    }
+
+
+}
