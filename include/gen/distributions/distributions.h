@@ -36,12 +36,12 @@ public:
         return std::make_any<return_type>(value_);
     }
 
-    [[nodiscard]] std::any gradients(std::any ret_grad, double scaler, GradientAccumulator& accumulator) {
+    [[nodiscard]] std::any gradients(std::any ret_grad, double scaler, GradientAccumulator& accumulator) override {
         auto grads = dist_.log_density_gradient(value_);
         return GenFnType::extract_argument_gradient(grads);
     }
 
-    [[nodiscard]] double get_score() const {
+    [[nodiscard]] double get_score() const override {
         return score_;
     }
 
