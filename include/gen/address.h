@@ -20,6 +20,8 @@ See the License for the specific language governing permissions and
 #include <initializer_list>
 #include <iostream>
 
+namespace gen {
+
 class Address;
 
 /**
@@ -41,3 +43,5 @@ private:
 };
 
 std::ostream& operator<< (std::ostream& out, const Address& address);
+
+}

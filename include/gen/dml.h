@@ -19,6 +19,7 @@ See the License for the specific language governing permissions and
 #include <gen/trie.h>
 #include <gen/conversions.h>
 #include <gen/trace.h>
+#include <gen/parameters.h>
 
 #include <any>
 #include <memory>
@@ -27,28 +28,23 @@ See the License for the specific language governing permissions and
 #include <torch/torch.h>
 #include <torch/csrc/autograd/functions/utils.h>
 
-using std::any_cast;
+using std::any, std::any_cast;
 using std::vector, std::pair;
 using std::cout, std::endl;
 using std::shared_ptr, std::unique_ptr, std::make_shared;
 using std::optional, std::make_optional;
-using torch::Tensor;
-using torch::nn::Module;
 
+using torch::Tensor;
+using torch::optim::OptimizerParamGroup;
 using torch::autograd::AutogradContext;
 using torch::autograd::variable_list;
 using torch::autograd::Node;
 using torch::autograd::VariableInfo;
 using torch::autograd::edge_list;
 
+using gen::GradientAccumulator;
 
-// ****************************************
-// * unrolling arguments into Tensor list *
-// ****************************************
-
-
-
-// TODO add other overloaded versions of these functions for other compound data types
+namespace gen::dml {
 
 // *******************************************************************
 // * autograd function associated with each generative function call *
@@ -58,40 +54,53 @@ using torch::autograd::edge_list;
 // https://github.com/pytorch/pytorch/blob/master/torch/csrc/autograd/function.h#L50
 // https://discuss.pytorch.org/t/extending-autograd-from-c/76240/5
 
-template <typename args_type, typename return_value_type>
+struct GradientHelper {
+    double* scaler_ptr_ {nullptr};
+    GradientAccumulator* accumulator_ptr_ {nullptr};
+};
+
+template<typename args_type, typename return_value_type>
 struct MyGradNode : public Node {
-    explicit MyGradNode(Trace& subtrace, const double& scaler_reference, edge_list&& next_edges)
-            : Node(std::move(next_edges)), subtrace_{subtrace}, scaler_reference_{scaler_reference} { };
+    explicit MyGradNode(Trace &subtrace, const GradientHelper& helper, edge_list &&next_edges)
+            : Node(std::move(next_edges)), subtrace_{subtrace},
+              helper_{helper} {};
+
     ~MyGradNode() override = default;
-    variable_list apply(variable_list&& unrolled_return_value_grad) override {
+
+    variable_list apply(variable_list &&unrolled_return_value_grad) override {
         variable_list unrolled_args_grad;
         auto return_value = any_cast<return_value_type>(subtrace_.get_return_value());
         return_value_type return_value_grad = roll(unrolled_return_value_grad, return_value);
-        auto args_grad = any_cast<args_type>(subtrace_.gradients(return_value_grad, scaler_reference_));
+        auto args_grad = any_cast<args_type>(subtrace_.gradients(
+                return_value_grad, *helper_.scaler_ptr_, *helper_.accumulator_ptr_));
         std::cout << "inside MyGradNode" << std::endl;
         return unroll(args_grad);
     }
+
 private:
-    Trace& subtrace_;
-    const double& scaler_reference_;
+    Trace &subtrace_;
+    const GradientHelper& helper_;
 };
 
-template <typename args_type, typename return_type>
+template<typename args_type, typename return_type>
 struct MyNode : public Node {
-    explicit MyNode(Trace& subtrace, const double& scaler_reference)
-        : subtrace_{subtrace}, scaler_reference_{scaler_reference} {}
+    explicit MyNode(Trace &subtrace, const GradientHelper& helper)
+            : subtrace_{subtrace}, helper_{helper} {}
+
     ~MyNode() override = default;
-    variable_list apply(variable_list&& inputs) override {
+
+    variable_list apply(variable_list &&inputs) override {
         std::any value_any = subtrace_.get_return_value();
         auto value = any_cast<return_type>(value_any);
         vector<Tensor> unrolled = unroll(value);
-        return torch::autograd::wrap_outputs(inputs, std::move(unrolled), [&](edge_list&& next_edges) {
-            return std::make_shared<MyGradNode<args_type, return_type>>(subtrace_, scaler_reference_, std::move(next_edges));
+        return torch::autograd::wrap_outputs(inputs, std::move(unrolled), [&](edge_list &&next_edges) {
+            return std::make_shared<MyGradNode<args_type, return_type>>(subtrace_, helper_, std::move(next_edges));
         });
     }
+
 private:
-    Trace& subtrace_;
-    const double& scaler_reference_;
+    Trace &subtrace_;
+    const GradientHelper& helper_;
 };
 
 // *************
@@ -100,32 +109,35 @@ private:
 
 class DMLAlreadyVisitedError : public std::exception {
 public:
-    explicit  DMLAlreadyVisitedError(const Address& address) : msg_ {
-            [&](){
+    explicit DMLAlreadyVisitedError(const Address &address) : msg_{
+            [&]() {
                 std::stringstream ss;
                 ss << "Address already visited: " << address;
-                return ss.str(); }()
-    } { }
-    [[nodiscard]] const char* what() const noexcept override {
+                return ss.str();
+            }()
+    } {}
+
+    [[nodiscard]] const char *what() const noexcept override {
         return msg_.c_str();
     }
+
 private:
     const std::string msg_;
 };
 
-template <typename T>
-T detach_clone_and_track(const T& args) {
+template<typename T>
+T detach_clone_and_track(const T &args) {
     vector<Tensor> args_unrolled = unroll(args);
     vector<Tensor> args_unrolled_copy;
-    for (auto& t : args_unrolled) {
+    for (auto &t: args_unrolled) {
         args_unrolled_copy.emplace_back(t.detach().clone().set_requires_grad(true));
     }
     return roll(args_unrolled_copy, args); // copy elision
 }
 
-template <typename args_type>
-pair<const args_type&, optional<shared_ptr<const args_type>>> maybe_track_args(const args_type& args,
-                                                                               bool prepare_for_gradients) {
+template<typename args_type>
+pair<const args_type &, optional<shared_ptr<const args_type>>> maybe_track_args(const args_type &args,
+                                                                                bool prepare_for_gradients) {
     if (prepare_for_gradients) {
         auto tracked_args_ptr = make_unique<const args_type>(detach_clone_and_track(args));
         return {*tracked_args_ptr, make_optional<shared_ptr<const args_type>>(move(tracked_args_ptr))};
@@ -134,28 +146,34 @@ pair<const args_type&, optional<shared_ptr<const args_type>>> maybe_track_args(c
     }
 }
 
-template <typename Generator, typename Model>
+template<typename Generator, typename Model>
 class DMLUpdateTracer;
 
-template <typename Model>
+template<typename Model>
 class DMLTrace : public Trace {
 public:
     typedef typename Model::return_type return_type;
     typedef typename Model::args_type args_type;
+    typedef typename Model::parameters_type parameters_type;
     typedef std::pair<DMLTrace<Model>, double> update_return_type;
 
-    explicit DMLTrace(const args_type& args, bool prepare_for_gradients, bool assert_retval_grad) :
-        subtraces_{make_shared<Trie<shared_ptr<Trace>>>()},
-        score_{0.0},
-        assert_retval_grad_{assert_retval_grad},
-        args_{maybe_track_args(args, prepare_for_gradients)},
-        prepared_for_gradients_{prepare_for_gradients},
-        scaler_{1} { }
-    DMLTrace(const DMLTrace& other) = default;
-    DMLTrace(DMLTrace&& other) noexcept = default;
+    explicit DMLTrace(const args_type &args, bool prepare_for_gradients, bool assert_retval_grad,
+                      const parameters_type& parameters) :
+            subtraces_{make_shared<Trie<shared_ptr<Trace>>>()},
+            score_{0.0},
+            assert_retval_grad_{assert_retval_grad},
+            args_{maybe_track_args(args, prepare_for_gradients)},
+            prepared_for_gradients_{prepare_for_gradients},
+            parameters_{parameters},
+            helper_{std::make_unique<GradientHelper>()} {}
 
-    DMLTrace& operator= (const DMLTrace& other) = default;
-    DMLTrace& operator= (DMLTrace&& other) noexcept = default;
+    DMLTrace(const DMLTrace &other) = default;
+
+    DMLTrace(DMLTrace &&other) noexcept = default;
+
+    DMLTrace &operator=(const DMLTrace &other) = default;
+
+    DMLTrace &operator=(DMLTrace &&other) noexcept = default;
 
     ~DMLTrace() override = default;
 
@@ -168,39 +186,39 @@ public:
         return maybe_value_.value();
     }
 
-    template <typename SubtraceType>
-    SubtraceType& add_subtrace(const Address& address, SubtraceType subtrace) {
+    template<typename SubtraceType>
+    SubtraceType &add_subtrace(const Address &address, SubtraceType subtrace) {
         score_ += subtrace.get_score();
         try {
             shared_ptr<SubtraceType> subtrace_ptr = make_shared<SubtraceType>(std::move(subtrace));
             shared_ptr<Trace> subtrace_base_ptr = subtrace_ptr;
             subtraces_->set_value(address, subtrace_base_ptr, false);
             return *subtrace_ptr;
-        } catch (const TrieOverwriteError&) {
+        } catch (const TrieOverwriteError &) {
             throw DMLAlreadyVisitedError(address);
         }
     }
 
-    [[nodiscard]] bool has_subtrace(const Address& address) const {
+    [[nodiscard]] bool has_subtrace(const Address &address) const {
         return subtraces_->get_subtrie(address).has_value();
     }
 
-    [[nodiscard]] const Trace& get_subtrace(const Address& address) const {
+    [[nodiscard]] const Trace &get_subtrace(const Address &address) const {
         return *any_cast<shared_ptr<Trace>>(subtraces_->get_value(address));
     }
 
-    template <typename Generator>
-    update_return_type update(Generator& gen, const Model& model_with_args,
-                              const Trie<shared_ptr<Trace>>& constraints) const {
+    template<typename Generator>
+    update_return_type update(Generator &gen, const Model &model_with_args,
+                              const Trie<shared_ptr<Trace>> &constraints) const {
         auto tracer = DMLUpdateTracer<Generator, Model>(gen, constraints);
         auto value = model_with_args.exec(tracer);
         return tracer.finish(value);
     }
 
-    static ChoiceTrie get_choice_trie(const Trie<shared_ptr<Trace>>& subtraces) {
-        ChoiceTrie trie {};
+    static ChoiceTrie get_choice_trie(const Trie<shared_ptr<Trace>> &subtraces) {
+        ChoiceTrie trie{};
         // TODO handle calls at the empty address properly
-        for (const auto& [key, subtrie] : subtraces.subtries()) {
+        for (const auto&[key, subtrie]: subtraces.subtries()) {
             if (subtrie.has_value()) {
                 const auto subtrace = subtrie.get_value();
                 trie.set_subtrie(Address{key}, subtrace->get_choice_trie());
@@ -216,66 +234,114 @@ public:
 
     [[nodiscard]] ChoiceTrie get_choice_trie() const override { return get_choice_trie(*subtraces_); }
 
-    const args_type& get_args() const { return args_.first; }
+    const args_type &get_args() const { return args_.first; }
 
-    double& get_scaler_reference() { return scaler_; }
+    const GradientHelper& get_helper_ref() { return *helper_; }
 
-    std::any gradients(std::any retval_grad_any, double scaler) override {
-        scaler_ = scaler; // NOTE: not threadsafe
-        // TODO add all parameters as inputs; we can require users to register their torch modules for now..
+    any gradients(any retval_grad_any, double scaler, GradientAccumulator& accumulator) override {
+
         if (!prepared_for_gradients_) {
             throw std::logic_error("not ready for gradients");
         }
+
+        // set the scaler_ so that recursive calls to gradients() will pass along this value
+        // NOTE: not thread safe, but this is okay, traces aren't intended to be thread safe
+        helper_->scaler_ptr_ = &scaler;
+        helper_->accumulator_ptr_ = &accumulator;
+
         return_type retval = any_cast<return_type>(get_return_value());
         return_type retval_grad = std::any_cast<return_type>(retval_grad_any);
         vector<Tensor> retval_unrolled = unroll(retval);
         vector<Tensor> retval_grad_unrolled = unroll(retval_grad);
-        vector<Tensor> args_unrolled = unroll(get_args());
-        vector<Tensor> args_grad_unrolled = torch::autograd::grad(retval_unrolled, args_unrolled, retval_grad_unrolled);
+
+        vector<Tensor> inputs = unroll(get_args());
+        size_t num_args = inputs.size();
+
+        // this means all recursive parameters of children modules, but not any children generative functions..
+        vector<Tensor> local_parameter_tensors = parameters_.local_parameters();
+        size_t num_local_parameters = local_parameter_tensors.size();
+
+        // combine arguments and gradients
+        inputs.insert(inputs.end(), local_parameter_tensors.begin(), local_parameter_tensors.end());
+
+        // do the backward pass. this recursively invokes gradients() for each subtrace
+        // NOTE: the returned input grads do not include parameters for callee generative functions
+        vector<Tensor> input_grads = torch::autograd::grad(retval_unrolled, inputs, retval_grad_unrolled);
+
+        // read off argument gradients
+        vector<Tensor> args_grad_unrolled;
+        size_t i;
+        for (i = 0; i < num_args; ++i) {
+            args_grad_unrolled.emplace_back(input_grads[i]);
+        }
         args_type args_grad = roll(args_grad_unrolled, get_args());
+
+        // read off local parameter gradients and increment the accumulators
+        assert(i == num_args);
+        for (auto it = accumulator.begin(parameters_); it != accumulator.end(parameters_); ++it) {
+            (*it).add_(input_grads[i], scaler);
+        }
+
         return args_grad; // TODO detach?
     }
 
 private:
-    pair<const args_type&, optional<shared_ptr<const args_type>>> args_;
+    // TODO why are we using shared_pointers here? we don't necessarily need Traces to be
+    // TODO copy-constructible...
+    pair<const args_type &, optional<shared_ptr<const args_type>>> args_;
     shared_ptr<Trie<shared_ptr<Trace>>> subtraces_;
     double score_;
     optional<return_type> maybe_value_;
     bool prepared_for_gradients_;
     bool assert_retval_grad_;
-    double scaler_; // for parameter gradients
+    std::unique_ptr<GradientHelper> helper_;
+    const parameters_type& parameters_;
 };
+
 
 // *******************
 // * Simulate tracer *
 // *******************
 
-template <typename Generator, typename Model>
+template<typename Generator, typename Model>
 class DMLSimulateTracer {
 public:
     typedef typename Model::args_type args_type;
+    typedef typename Model::parameters_type parameters_type;
 
-    explicit DMLSimulateTracer(Generator& gen, const args_type& args,
+    explicit DMLSimulateTracer(Generator &gen, const args_type &args,
+                               const parameters_type& parameters,
                                bool prepare_for_gradients, bool assert_retval_grad) :
             finished_(false),
             gen_{gen},
-            trace_{args, prepare_for_gradients, assert_retval_grad},
+            trace_{args, prepare_for_gradients, assert_retval_grad, parameters},
             prepare_for_gradients_{prepare_for_gradients},
-            scaler_reference_{trace_.get_scaler_reference()} {}
+            helper_ref_{trace_.get_helper_ref()},
+            parameters_{parameters} {}
 
-    const args_type& get_args() const { return trace_.get_args(); }
+    const args_type &get_args() const { return trace_.get_args(); }
 
-    template <typename CalleeType>
+    template<typename CalleeType, typename CalleeParametersType>
     typename CalleeType::return_type
-    call(Address&& address, CalleeType&& gen_fn_with_args) {
+    call(Address &&address, CalleeType &&gen_fn_with_args, CalleeParametersType& parameters) {
         assert(!finished_); // if this assertion fails, it is a bug in DML not user code
-        Trace& subtrace = trace_.add_subtrace(address, gen_fn_with_args.simulate(gen_, prepare_for_gradients_));
-        const auto& value = any_cast<typename CalleeType::return_type>(subtrace.get_return_value());
-        auto node = MyNode<typename CalleeType::args_type, typename CalleeType::return_type>(subtrace, scaler_reference_);
+        Trace &subtrace = trace_.add_subtrace(address,
+                                              gen_fn_with_args.simulate(gen_, parameters, prepare_for_gradients_));
+        const auto &value = any_cast<typename CalleeType::return_type>(subtrace.get_return_value());
+
+        auto node = MyNode<typename CalleeType::args_type, typename CalleeType::return_type>(subtrace, helper_ref_);
+
         // NOTE: gen_fn_with_args.get_args() returns args that are tracked as part of the autograd graph
         auto tracked_value_unrolled = node(unroll(gen_fn_with_args.get_args()));
         typename CalleeType::return_type tracked_value = roll(tracked_value_unrolled, value);
         return tracked_value;
+    }
+
+    template<typename CalleeType>
+    typename CalleeType::return_type
+    call(Address&& address, CalleeType&& gen_fn_with_args) {
+        gen::EmptyModule parameters;
+        return call(std::move(address), std::move(gen_fn_with_args), parameters);
     }
 
     DMLTrace<Model> finish(typename Model::return_type value) {
@@ -284,86 +350,103 @@ public:
         return std::move(trace_);
     }
 
+    // for use in the body of the exec() function
+    const parameters_type& get_parameters() { return parameters_; }
+
 private:
     bool finished_;
-    Generator& gen_;
+    Generator &gen_;
     DMLTrace<Model> trace_;
     bool prepare_for_gradients_;
-    double& scaler_reference_;
+    const GradientHelper& helper_ref_;
+    const parameters_type& parameters_;
 };
 
 // *******************
 // * Generate tracer *
 // *******************
 
-template <typename Generator, typename Model>
+template<typename Generator, typename Model>
 class DMLGenerateTracer {
 public:
     typedef typename Model::args_type args_type;
+    typedef typename Model::parameters_type parameters_type;
 
-    explicit DMLGenerateTracer(Generator& gen, const args_type& args, const ChoiceTrie& constraints,
-                               bool prepare_for_gradients, bool assert_retval_grad) :
+    explicit DMLGenerateTracer(Generator &gen, const args_type &args, const parameters_type& parameters,
+                               const ChoiceTrie &constraints, bool prepare_for_gradients, bool assert_retval_grad) :
             finished_(false),
             gen_{gen},
-            trace_{args, prepare_for_gradients, assert_retval_grad},
+            trace_{args, prepare_for_gradients, assert_retval_grad, parameters},
             log_weight_(0.0),
             constraints_(constraints),
             prepare_for_gradients_{prepare_for_gradients},
-            scaler_reference_{trace_.get_scaler_reference()} {}
+            helper_ref_{trace_.get_helper_ref()},
+            parameters_{parameters} {}
 
-    const args_type& get_args() const { return trace_.get_args(); }
+    const args_type &get_args() const { return trace_.get_args(); }
 
-    template <typename CalleeType>
+    template<typename CalleeType, typename CalleeParametersType>
     typename CalleeType::return_type
-    call(Address&& address, CalleeType&& gen_fn_with_args) {
+    call(Address &&address, CalleeType &&gen_fn_with_args, CalleeParametersType& parameters) {
         assert(!finished_); // if this assertion fails, it is a bug in DML not user code
-        ChoiceTrie sub_constraints { constraints_.get_subtrie(address, false) };
-        auto subtrace_and_log_weight = gen_fn_with_args.generate(gen_, sub_constraints, prepare_for_gradients_);
-        Trace& subtrace = trace_.add_subtrace(address, std::move(subtrace_and_log_weight.first));
-        const auto& value = any_cast<typename CalleeType::return_type>(subtrace.get_return_value());
-        auto node = MyNode<typename CalleeType::args_type, typename CalleeType::return_type>(subtrace, scaler_reference_);
+        ChoiceTrie sub_constraints{constraints_.get_subtrie(address, false)};
+        auto subtrace_and_log_weight = gen_fn_with_args.generate(gen_, parameters, sub_constraints, prepare_for_gradients_);
+        Trace &subtrace = trace_.add_subtrace(address, std::move(subtrace_and_log_weight.first));
+        const auto &value = any_cast<typename CalleeType::return_type>(subtrace.get_return_value());
+        auto node = MyNode<typename CalleeType::args_type, typename CalleeType::return_type>(subtrace, helper_ref_);
         // NOTE: gen_fn_with_args.get_args() returns args that are tracked as part of the autograd graph
         auto tracked_value_unrolled = node(unroll(gen_fn_with_args.get_args()));
         typename CalleeType::return_type tracked_value = roll(tracked_value_unrolled, value);
         return tracked_value;
     }
 
+    template<typename CalleeType>
+    typename CalleeType::return_type
+    call(Address&& address, CalleeType&& gen_fn_with_args) {
+        gen::EmptyModule parameters;
+        return call(std::move(address), std::move(gen_fn_with_args), parameters);
+    }
 
-    std::pair<DMLTrace<Model>,double> finish(typename Model::return_type value) {
+    std::pair<DMLTrace<Model>, double> finish(typename Model::return_type value) {
         finished_ = true;
         trace_.set_value(value);
         return std::pair(std::move(trace_), log_weight_);
     }
 
+    const parameters_type& get_parameters() { return parameters_; }
+
 private:
     double log_weight_;
     bool finished_;
-    Generator& gen_;
+    Generator &gen_;
     DMLTrace<Model> trace_;
-    const ChoiceTrie& constraints_;
+    const ChoiceTrie &constraints_;
     bool prepare_for_gradients_;
-    double& scaler_reference_;
+    const GradientHelper& helper_ref_;
+    const parameters_type& parameters_;
 };
 
 // *******************
 // * Update tracer *
 // *******************
 
-template <typename Generator, typename Model>
+// TODO add integration with parameter store
+template<typename Generator, typename Model>
 class DMLUpdateTracer {
 public:
-    explicit DMLUpdateTracer(Generator& gen, const ChoiceTrie& constraints)
+    explicit DMLUpdateTracer(Generator &gen, const ChoiceTrie &constraints)
             : finished_(false), gen_{gen}, trace_{},
-              log_weight_(0.0), constraints_(constraints) { }
+              log_weight_(0.0), constraints_(constraints) {}
 
-    template <typename CalleeType>
+    // TODO add third argument for parameter store for calllee (see simulate above)
+    template<typename CalleeType>
     typename CalleeType::return_type
-    call(Address&& address, CalleeType&& gen_fn_with_args) {
+    call(Address &&address, CalleeType &&gen_fn_with_args) {
         assert(!finished_); // if this assertion fails, it is a bug in DML not user code
-        ChoiceTrie sub_constraints { constraints_.get_subtrie(address, false) };
+        ChoiceTrie sub_constraints{constraints_.get_subtrie(address, false)};
         typename CalleeType::trace_type subtrace;
         if (prev_trace_.has_subtrace(address)) {
-            auto& prev_subtrace = *any_cast<unique_ptr<Trace>>(prev_trace_.get_subtrace(address));
+            auto &prev_subtrace = *any_cast<unique_ptr<Trace>>(prev_trace_.get_subtrace(address));
             auto update_result = prev_subtrace.update(gen_, gen_fn_with_args, sub_constraints);
             subtrace = std::get<0>(update_result);
             log_weight_ += std::get<1>(update_result);
@@ -380,7 +463,7 @@ public:
         return value;
     }
 
-    std::tuple<DMLTrace<Model>,double,ChoiceTrie> finish(typename Model::return_type value) {
+    std::tuple<DMLTrace<Model>, double, ChoiceTrie> finish(typename Model::return_type value) {
         log_weight_ += 0; // TODO decrement for all visited
         // TODO discard all that were not visied (using update method of Trie, which still needs to be implemented)
         finished_ = true;
@@ -391,10 +474,10 @@ public:
 private:
     double log_weight_;
     bool finished_;
-    Generator& gen_;
-    const DMLTrace<Model>& prev_trace_;
+    Generator &gen_;
+    const DMLTrace<Model> &prev_trace_;
     DMLTrace<Model> trace_;
-    const ChoiceTrie& constraints_;
+    const ChoiceTrie &constraints_;
     ChoiceTrie discard_;
 };
 
@@ -402,9 +485,6 @@ private:
 // ***************************
 // * DML generative function *
 // ***************************
-
-class DMLGenFnModule : public torch::nn::Module {
-};
 
 /**
  * Abstract type for a generative function constructed with the Dynamic Modeling Language (DML), which is embedded in C++.
@@ -415,42 +495,45 @@ class DMLGenFnModule : public torch::nn::Module {
  * @tparam ArgsType Type of the input to the generative function.
  * @tparam ReturnType Type of the return value of hte generative function.
  */
-template <typename Model, typename ArgsType, typename ReturnType>
+template<typename Model, typename ArgsType, typename ReturnType, typename ParametersType>
 class DMLGenFn {
 private:
     const ArgsType args_;
     const bool assert_retval_grad_;
-    const DMLGenFnModule module_;
 public:
     typedef ArgsType args_type;
     typedef ReturnType return_type;
+    typedef ParametersType parameters_type;
     typedef DMLTrace<Model> trace_type;
 
-    explicit DMLGenFn(ArgsType args, bool assert_retval_grad=false) : args_(args), assert_retval_grad_(assert_retval_grad) {}
+    explicit DMLGenFn(ArgsType args, bool assert_retval_grad = false)
+        : args_(args), assert_retval_grad_(assert_retval_grad) {}
 
-    const ArgsType& get_args() const {
+    const ArgsType &get_args() const {
         return args_;
     }
 
-    DMLGenFnModule get_torch_nn_module() const {
-        return module_;
-    }
-
-    template <typename Generator>
-    DMLTrace<Model> simulate(Generator& gen, bool prepare_for_gradients) const {
-        c10::InferenceMode guard{!prepare_for_gradients}; // inference mode is on if we are not preparing for gradients
-        auto tracer = DMLSimulateTracer<Generator,Model>{gen, args_, prepare_for_gradients, assert_retval_grad_};
-        auto value = static_cast<const Model*>(this)->exec(tracer);
+    template<typename Generator>
+    DMLTrace<Model> simulate(Generator &gen, const parameters_type& parameters, bool prepare_for_gradients) const {
+        c10::InferenceMode guard{
+                !prepare_for_gradients}; // inference mode is on if we are not preparing for gradients
+        auto tracer = DMLSimulateTracer<Generator, Model>{gen, args_, parameters, prepare_for_gradients,
+                                                          assert_retval_grad_};
+        auto value = static_cast<const Model *>(this)->exec(tracer);
         return tracer.finish(value);
     }
 
-    template <typename Generator>
-    std::pair<DMLTrace<Model>,double> generate(
-            Generator& gen, const ChoiceTrie& constraints, bool prepare_for_gradients) const {
-        c10::InferenceMode guard{!prepare_for_gradients}; // inference mode is on if we are not preparing for gradients
-        auto tracer = DMLGenerateTracer<Generator,Model>{gen, args_, constraints, prepare_for_gradients, assert_retval_grad_};
-        auto value = static_cast<const Model*>(this)->exec(tracer);
+    template<typename Generator>
+    std::pair<DMLTrace<Model>, double> generate(
+            Generator &gen, const parameters_type& parameters,
+            const ChoiceTrie &constraints, bool prepare_for_gradients) const {
+        c10::InferenceMode guard{
+                !prepare_for_gradients}; // inference mode is on if we are not preparing for gradients
+        auto tracer = DMLGenerateTracer<Generator, Model>{gen, args_, parameters, constraints, prepare_for_gradients,
+                                                          assert_retval_grad_};
+        auto value = static_cast<const Model *>(this)->exec(tracer);
         return tracer.finish(value);
     }
 };
 
+}

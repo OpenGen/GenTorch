@@ -2,15 +2,18 @@ set(HEADER_LIST
         "${Gen_SOURCE_DIR}/include/gen/address.h"
         "${Gen_SOURCE_DIR}/include/gen/conversions.h"
         "${Gen_SOURCE_DIR}/include/gen/trie.h"
+        "${Gen_SOURCE_DIR}/include/gen/parameters.h"
         "${Gen_SOURCE_DIR}/include/gen/trace.h"
         "${Gen_SOURCE_DIR}/include/gen/dml.h"
         "${Gen_SOURCE_DIR}/include/gen/normal.h")
 
 add_library(gen_library
+        parameters.cpp
         address.cpp
         normal.cpp
         conversions.cpp
         ${HEADER_LIST})
+
 target_include_directories(gen_library PUBLIC ../include)
 target_link_libraries(gen_library "${TORCH_LIBRARIES}")
 

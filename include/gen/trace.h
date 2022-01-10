@@ -16,34 +16,39 @@ See the License for the specific language governing permissions and
 #pragma once
 
 #include <gen/trie.h>
+#include <gen/parameters.h>
 
 #include <any>
 
-/**
- * Immutable execution of a generative function.
- *
- * Constructed with `simulate` and `generate` member functions of generative functions.
- */
-class Trace {
-public:
-
-    virtual ~Trace() = default;
+namespace gen {
 
     /**
-     * @return the choice trie.
+     * Immutable execution of a generative function.
+     *
+     * Constructed with `simulate` and `generate` member functions of generative functions.
      */
-    [[nodiscard]] virtual Trie get_choice_trie() const = 0;
+    class Trace {
+    public:
 
-    /**
-     * @return the log joint density.
-     */
-    [[nodiscard]] virtual double get_score() const = 0;
+        virtual ~Trace() = default;
 
-    /**
-     * @return the return value of the generative function.
-     */
-    [[nodiscard]] virtual std::any get_return_value() const = 0;
+        /**
+         * @return the choice trie.
+         */
+        [[nodiscard]] virtual Trie<std::any> get_choice_trie() const = 0;
 
-    virtual std::any gradients(std::any retval_grad, double scaler) = 0;
+        /**
+         * @return the log joint density.
+         */
+        [[nodiscard]] virtual double get_score() const = 0;
 
-};
+        /**
+         * @return the return value of the generative function.
+         */
+        [[nodiscard]] virtual std::any get_return_value() const = 0;
+
+        virtual std::any gradients(std::any retval_grad, double scaler, GradientAccumulator& accumulator) = 0;
+
+    };
+
+}

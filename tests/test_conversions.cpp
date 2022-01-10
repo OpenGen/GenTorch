@@ -24,6 +24,8 @@ using std::vector, std::pair;
 using torch::Tensor;
 using torch::TensorOptions;
 using torch::tensor;
+using gen::unroll;
+using gen::roll;
 
 TEST_CASE("Tensor", "[conversion]") {
 

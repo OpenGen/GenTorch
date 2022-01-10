@@ -9,6 +9,7 @@ FetchContent_MakeAvailable(Catch2)
 # Tests need to be added as executables first
 add_executable(testlib
         test_address.cpp
+        test_parameters.cpp
         test_trie.cpp
         test_conversions.cpp
         test_dml.cpp)
@@ -28,3 +29,6 @@ include(CTest)
 include(Catch)
 catch_discover_tests(testlib)
 
+## for experimentation
+#add_executable(scrap scrap.cpp)
+#target_link_libraries(scrap PRIVATE gen_library)

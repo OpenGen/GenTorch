@@ -14,7 +14,6 @@ See the License for the specific language governing permissions and
 ==============================================================================*/
 
 #include <catch2/catch.hpp>
-#include <gen/address.h>
 #include <gen/trie.h>
 
 #include <cassert>
@@ -29,6 +28,7 @@ using std::any, std::make_any, std::any_cast;
 using torch::Tensor;
 using torch::TensorOptions;
 using torch::tensor;
+using gen::ChoiceTrie;
 
 TEST_CASE("empty", "[trie]")  {
     ChoiceTrie trie {};
