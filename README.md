@@ -35,7 +35,7 @@ In either case, you need to add an option `-DCMAKE_PREFIX_PATH=/absolute/path/to
 
 To configure:
 ```shell
-cmake -S . -b build -DCMAKE_PREFIX_PATH=/absolute/path/to/libtorch
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/absolute/path/to/libtorch
 ```
 
 To build:
