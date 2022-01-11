@@ -67,24 +67,26 @@ cmake --build build --target docs
 
 [~] Implement `update` for DML, without incremental computation.
 
-[ ] Add ability to register `torch::nn::Module`s that are called directly within a DML function, and to recursively compute a vector of trainable parameters, like supported by `torch::nn::Module`).
+[x] Add ability to register `torch::nn::Module`s that are called directly within a DML function, and to recursively compute a vector of trainable parameters, like supported by `torch::nn::Module`).
+
+[x] Implement an example of multi-threaded simple Monte Carlo and importance sampling that exhibits near-linear scaling up to 32 cores on a c6i.metal instance.
 
 [~] Implement an example of multi-threaded SGD-based training of a `torch::nn::Module` that exhibits good near-linear scaling up to 32 cores on a c6i.metal instance.
 
 [x] Implement threadsafe `gradients` for DML with support for compound data
 types in arguments and return values, but not support for parameter gradients
 
-[ ] Add support for parameter gradients to the DML gradients implementation
+[x] Add support for parameter gradients to the DML gradients implementation
 
 [ ] Add example of running `gradients` on a generative function that calls a `torch::nn::Module` that is defined in C++ with a custom gradient.
 
 [ ] Add  example of running `gradients` on a generative function that calls a `torch::jit::script::Module` that was defined in Python.
 
-[ ] Add some abstraction to make it easy to add a new primitive distribution.
+[x] Add some abstraction to make it easy to add a new primitive distribution.
 
-[ ] Implement `Normal` and `Bernoulli` and `Discrete` distributions based on that abstraction.
+[x] Implement `Normal` and `Bernoulli` and `UniformContinuous` distributions based on that abstraction.
 
-[ ] Implement proper tests and continous integration.
+[ ] Implement continous integration on GitHub
 
 ### Milestone 2: Initial version of a multi-threaded inference and learning library
 
