@@ -12,7 +12,7 @@ using gen::distributions::uniform_continuous::UniformContinuous;
 
 namespace gen::examples::simple_monte_carlo {
 
-    typedef nullptr_t Nothing;
+    typedef std::nullptr_t Nothing;
     constexpr Nothing nothing = nullptr;
 
     struct Model;
@@ -27,6 +27,7 @@ namespace gen::examples::simple_monte_carlo {
     };
 
     void do_chunk(size_t thread_idx, std::vector<double>& result, size_t num_samples) {
+        c10::InferenceMode guard{true}; // should be unnecessary, since no new Tensors are created
         EmptyModule parameters;
         std::random_device rd{};
         std::mt19937 rng{rd()};

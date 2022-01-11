@@ -25,7 +25,7 @@ namespace gen::distributions::normal {
 
     double log_density(double mean, double std, double x) {
         double diff = x - mean;
-        return -std::log(std) - 0.5 * sqrt_2_pi() - 0.5 * (diff * diff / std);
+        return -std::log(std) - 0.5 * sqrt_2_pi - 0.5 * (diff * diff / std);
     }
 
     std::tuple<double, double, double> log_density_gradient(double mean, double std, double x) {

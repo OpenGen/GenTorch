@@ -28,8 +28,8 @@ namespace gen::distributions::normal {
     using torch::tensor;
     using gen::distributions::PrimitiveGenFn;
 
-    constexpr double pi() { return 3.141592653589793238462643383279502884; }
-    constexpr double sqrt_2_pi() { return std::sqrt(2.0 * pi()); }
+    const double pi = 3.141592653589793238462643383279502884;
+    const double sqrt_2_pi = std::sqrt(2.0 * pi);
 
     class NormalDist {
     public:
