@@ -141,11 +141,9 @@ namespace gen {
             if (!overwrite && !empty()) {
                 throw TrieOverwriteError(Address{});
             }
-            value_->emplace(value); // calls constructor of std::any with argument of type T
+            value_->emplace(std::move(value));
             map_->clear();
             return value_->value();
-//        ValueType* value_ptr = &value_->value();
-//        return *value_ptr;
         }
 
         /**
@@ -157,14 +155,14 @@ namespace gen {
          */
         ValueType &set_value(const Address &address, ValueType value, bool overwrite = true) {
             if (address.empty()) {
-                return set_value(value, overwrite);
+                return set_value(std::move(value), overwrite);
             } else {
                 Trie subtrie = get_subtrie(address, false);
                 if (!overwrite && !subtrie.empty()) {
                     throw TrieOverwriteError(address);
                 }
                 set_subtrie(address, subtrie);
-                return subtrie.set_value(value);
+                return subtrie.set_value(std::move(value));
             }
         }
 
