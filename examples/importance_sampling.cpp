@@ -54,7 +54,7 @@ namespace gen::examples::importance_sampling {
             auto model_trace_and_log_weight = model.generate(rng, parameters, constraints, false);
             auto& trace = model_trace_and_log_weight.first;
             double log_weight = model_trace_and_log_weight.second - proposal_trace.get_score();
-            Tensor retval = std::any_cast<Tensor>(trace.get_return_value());
+            const Tensor& retval = trace.get_return_value();
             float radius = *retval.data_ptr<float>();
             if (radius < 1.0) {
                 total += std::exp(log_weight);

@@ -1,6 +1,5 @@
 #include <torch/torch.h>
 #include <gen/address.h>
-#include <gen/trie.h>
 #include <gen/dml.h>
 #include <gen/parameters.h>
 #include <gen/distributions/uniform_continuous.h>
@@ -35,7 +34,7 @@ namespace gen::examples::simple_monte_carlo {
         size_t num_inside_circle = 0;
         for (size_t i = 0; i < num_samples; i++) {
             auto trace = model.simulate(rng, parameters, false);
-            Tensor retval = std::any_cast<Tensor>(trace.get_return_value());
+            const Tensor& retval = trace.get_return_value();
             float radius = *retval.data_ptr<float>();
             if (radius < 1.0) {
                 num_inside_circle++;

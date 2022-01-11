@@ -32,10 +32,11 @@ public:
 
     PrimitiveTrace(return_type &&value, const dist_type &dist) : value_{value}, dist_{dist}, score_{0.0} {}
 
-    [[nodiscard]] std::any get_return_value() const override {
-        return std::make_any<return_type>(value_);
+    [[nodiscard]] const return_type& get_return_value() const {
+        return value_;
     }
 
+    // TODO make gradients not use std::any
     [[nodiscard]] std::any gradients(std::any ret_grad, double scaler, GradientAccumulator& accumulator) override {
         auto grads = dist_.log_density_gradient(value_);
         return GenFnType::extract_argument_gradient(grads);

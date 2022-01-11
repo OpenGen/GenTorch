@@ -59,9 +59,9 @@ struct GradientHelper {
     GradientAccumulator* accumulator_ptr_ {nullptr};
 };
 
-template<typename args_type, typename return_value_type>
+template<typename args_type, typename return_value_type, typename subtrace_type>
 struct MyGradNode : public Node {
-    explicit MyGradNode(Trace &subtrace, const GradientHelper& helper, edge_list &&next_edges)
+    explicit MyGradNode(subtrace_type& subtrace, const GradientHelper& helper, edge_list &&next_edges)
             : Node(std::move(next_edges)), subtrace_{subtrace},
               helper_{helper} {};
 
@@ -69,7 +69,7 @@ struct MyGradNode : public Node {
 
     variable_list apply(variable_list &&unrolled_return_value_grad) override {
         variable_list unrolled_args_grad;
-        auto return_value = any_cast<return_value_type>(subtrace_.get_return_value());
+        const return_value_type& return_value = subtrace_.get_return_value();
         return_value_type return_value_grad = roll(unrolled_return_value_grad, return_value);
         auto args_grad = any_cast<args_type>(subtrace_.gradients(
                 return_value_grad, *helper_.scaler_ptr_, *helper_.accumulator_ptr_));
@@ -77,28 +77,27 @@ struct MyGradNode : public Node {
     }
 
 private:
-    Trace &subtrace_;
+    subtrace_type& subtrace_;
     const GradientHelper& helper_;
 };
 
-template<typename args_type, typename return_type>
+template<typename args_type, typename return_type, typename subtrace_type>
 struct MyNode : public Node {
-    explicit MyNode(Trace &subtrace, const GradientHelper& helper)
+    explicit MyNode(subtrace_type& subtrace, const GradientHelper& helper)
             : subtrace_{subtrace}, helper_{helper} {}
 
     ~MyNode() override = default;
 
     variable_list apply(variable_list &&inputs) override {
-        std::any value_any = subtrace_.get_return_value();
-        auto value = any_cast<return_type>(value_any);
+        const return_type& value = subtrace_.get_return_value();
         vector<Tensor> unrolled = unroll(value);
         return torch::autograd::wrap_outputs(inputs, std::move(unrolled), [&](edge_list &&next_edges) {
-            return std::make_shared<MyGradNode<args_type, return_type>>(subtrace_, helper_, std::move(next_edges));
+            return std::make_shared<MyGradNode<args_type, return_type, subtrace_type>>(subtrace_, helper_, std::move(next_edges));
         });
     }
 
 private:
-    Trace &subtrace_;
+    subtrace_type& subtrace_;
     const GradientHelper& helper_;
 };
 
@@ -183,7 +182,7 @@ public:
 
     [[nodiscard]] double get_score() const override { return score_; }
 
-    [[nodiscard]] std::any get_return_value() const override {
+    [[nodiscard]] const return_type& get_return_value() const {
         if (!maybe_value_.has_value()) {
             throw std::runtime_error("set_value was never called");
         }
@@ -242,6 +241,8 @@ public:
 
     const GradientHelper& get_helper_ref() { return *helper_; }
 
+    // TODO: change retval_grad to use retval_type, and similarly for gradients_args
+
     any gradients(any retval_grad_any, double scaler, GradientAccumulator& accumulator) override {
 
         if (!prepared_for_gradients_) {
@@ -253,7 +254,7 @@ public:
         helper_->scaler_ptr_ = &scaler;
         helper_->accumulator_ptr_ = &accumulator;
 
-        return_type retval = any_cast<return_type>(get_return_value());
+        const return_type& retval = get_return_value();
         return_type retval_grad = std::any_cast<return_type>(retval_grad_any);
         vector<Tensor> retval_unrolled = unroll(retval);
         vector<Tensor> retval_grad_unrolled = unroll(retval_grad);
@@ -330,26 +331,26 @@ public:
     template<typename CalleeType, typename CalleeParametersType>
     typename CalleeType::return_type
     call(Address &&address, CalleeType &&gen_fn_with_args, CalleeParametersType& parameters) {
+        typedef typename CalleeType::trace_type subtrace_type;
         assert(!finished_); // if this assertion fails, it is a bug in DML not user code
-        Trace &subtrace = trace_.add_subtrace(address,
+        typename CalleeType::trace_type& subtrace = trace_.add_subtrace(address,
                                               gen_fn_with_args.simulate(gen_, parameters, prepare_for_gradients_));
-        const auto &value = any_cast<typename CalleeType::return_type>(subtrace.get_return_value());
+        const auto& value = subtrace.get_return_value();
         if (prepare_for_gradients_) {
-            auto node = MyNode<typename CalleeType::args_type, typename CalleeType::return_type>(subtrace, helper_ref_);
+            auto node = MyNode<typename CalleeType::args_type, typename CalleeType::return_type, subtrace_type>(subtrace, helper_ref_);
             // NOTE: gen_fn_with_args.get_args() returns args that are tracked as part of the autograd graph
             auto tracked_value_unrolled = node(unroll(gen_fn_with_args.get_args()));
             typename CalleeType::return_type tracked_value = roll(tracked_value_unrolled, value);
             return tracked_value;
         } else {
-            return value;
+            return value; // copy the value
         }
     }
 
     template<typename CalleeType>
     typename CalleeType::return_type
     call(Address&& address, CalleeType&& gen_fn_with_args) {
-        gen::EmptyModule parameters;
-        return call(std::move(address), std::move(gen_fn_with_args), parameters);
+        return call(std::move(address), std::move(gen_fn_with_args), gen::empty_module_singleton);
     }
 
     DMLTrace<Model> finish(typename Model::return_type value) {
@@ -396,28 +397,30 @@ public:
     template<typename CalleeType, typename CalleeParametersType>
     typename CalleeType::return_type
     call(Address &&address, CalleeType &&gen_fn_with_args, CalleeParametersType& parameters) {
+        typedef typename CalleeType::args_type callee_args_type;
+        typedef typename CalleeType::trace_type callee_trace_type;
+        typedef typename CalleeType::return_type callee_return_type;
         assert(!finished_); // if this assertion fails, it is a bug in DML not user code
         ChoiceTrie sub_constraints{constraints_.get_subtrie(address, false)};
         auto subtrace_and_log_weight = gen_fn_with_args.generate(gen_, parameters, sub_constraints, prepare_for_gradients_);
-        Trace &subtrace = trace_.add_subtrace(address, std::move(subtrace_and_log_weight.first));
+        callee_trace_type& subtrace = trace_.add_subtrace(address, std::move(subtrace_and_log_weight.first));
         // TODO this any_cast isn't doing what I want?
-        const auto value = any_cast<typename CalleeType::return_type>(subtrace.get_return_value());
+        const callee_return_type& value = subtrace.get_return_value();
         if (prepare_for_gradients_) {
-            auto node = MyNode<typename CalleeType::args_type, typename CalleeType::return_type>(subtrace, helper_ref_);
+            auto node = MyNode<callee_args_type, callee_return_type, callee_trace_type>(subtrace, helper_ref_);
             // NOTE: gen_fn_with_args.get_args() returns args that are tracked as part of the autograd graph
             auto tracked_value_unrolled = node(unroll(gen_fn_with_args.get_args()));
             typename CalleeType::return_type tracked_value = roll(tracked_value_unrolled, value);
             return tracked_value;
         } else {
-            return value;
+            return value; // copy
         }
     }
 
     template<typename CalleeType>
     typename CalleeType::return_type
     call(Address&& address, CalleeType&& gen_fn_with_args) {
-        gen::EmptyModule parameters;
-        return call(std::move(address), std::move(gen_fn_with_args), parameters);
+        return call(std::move(address), std::move(gen_fn_with_args), gen::empty_module_singleton);
     }
 
     std::pair<DMLTrace<Model>, double> finish(typename Model::return_type value) {

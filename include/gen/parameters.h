@@ -104,4 +104,6 @@ private:
 
 class EmptyModule : public Module {};
 
+const EmptyModule empty_module_singleton {};
+
 }
