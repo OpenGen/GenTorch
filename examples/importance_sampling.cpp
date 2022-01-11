@@ -53,7 +53,7 @@ namespace gen::examples::importance_sampling {
             auto constraints = proposal_trace.get_choice_trie();
             auto model_trace_and_log_weight = model.generate(rng, parameters, constraints, false);
             auto& trace = model_trace_and_log_weight.first;
-            double log_weight = model_trace_and_log_weight.second;
+            double log_weight = model_trace_and_log_weight.second - proposal_trace.get_score();
             Tensor retval = std::any_cast<Tensor>(trace.get_return_value());
             float radius = *retval.data_ptr<float>();
             if (radius < 1.0) {
@@ -88,6 +88,8 @@ namespace gen::examples::importance_sampling {
 const std::string usage = "Usage: ./importance_sampling <num_threads> <num_samples_per_thread>";
 
 int main(int argc, char* argv[]) {
+    torch::set_num_interop_threads(1);
+    torch::set_num_threads(1);
     if (argc != 3) {
         throw std::invalid_argument(usage);
     }

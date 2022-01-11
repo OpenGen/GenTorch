@@ -69,6 +69,8 @@ namespace gen::examples::simple_monte_carlo {
 const std::string usage = "Usage: ./simple_monte_carlo <num_threads> <num_samples_per_thread>";
 
 int main(int argc, char* argv[]) {
+    torch::set_num_interop_threads(1);
+    torch::set_num_threads(1);
     if (argc != 3) {
         throw std::invalid_argument(usage);
     }
