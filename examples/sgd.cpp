@@ -62,7 +62,7 @@ namespace gen::examples::sgd {
                 assert(!z.is_inference());
             }
             auto& parameters = tracer.get_parameters();
-            auto h1 = torch::relu(parameters.fc1->forward(z));
+            auto h1 = parameters.fc1->forward(z);
             assert(h1.sizes().equals({50}));
             auto h2 = parameters.fc2->forward(h1);
             assert(h2.sizes().equals({2}));
@@ -132,35 +132,59 @@ namespace gen::examples::sgd {
         return minibatch;
     }
 
+    void single_threaded_gradient_estimation(std::mt19937& rng, ModelModule& parameters, const dataset_t& data,
+                                             size_t minibatch_size, gen::GradientAccumulator& accum) {
+        std::vector<size_t> minibatch = generate_minibatch(rng, data.size(), minibatch_size);
+        double scaler = 1.0 / minibatch_size;
+        for (size_t i : minibatch) {
+
+            // obtain datum
+            auto [x, y, z] = data[i];
+
+            // obtain trace
+            Model model {z};
+            ChoiceTrie constraints;
+            constraints.set_value({"x"}, x);
+            constraints.set_value({"y"}, y);
+            auto trace_and_log_weight = model.generate(rng, parameters, constraints, true);
+
+            // compute gradients for this datum
+            trace_and_log_weight.first.gradients(nothing, scaler, accum);
+        }
+        accum.update_module_gradients();
+    }
+
     void single_threaded_sgd_training(std::mt19937& rng, ModelModule& parameters, const dataset_t& data,
                                       size_t iters, size_t minibatch_size, double learning_rate) {
-        torch::optim::SGD sgd {parameters.all_parameters(), torch::optim::SGDOptions(learning_rate)};
+        torch::optim::SGD sgd {parameters.all_parameters(), torch::optim::SGDOptions(learning_rate).
+                                                                dampening(0.0).
+                                                                momentum(0.0)};
         gen::GradientAccumulator accum {parameters};
 
         for (size_t iter = 0; iter < iters; iter++) {
 
-            // generate minibatch
-            std::vector<size_t> minibatch_idx = generate_minibatch(rng, data.size(), minibatch_size);
+            single_threaded_gradient_estimation(rng, parameters, data, minibatch_size, accum);
+            sgd.step();
 
-            double scaler = 1.0 / minibatch_size;
-            for (size_t i : minibatch_idx) {
-
-                // obtain datum
-                auto [x, y, z] = data[i];
-
-                // obtain trace
-                Model model {z};
-                ChoiceTrie constraints;
-                constraints.set_value({"x"}, x);
-                constraints.set_value({"y"}, y);
-                auto trace_and_log_weight = model.generate(rng, parameters, constraints, true);
-
-                // compute gradients for this datum
-                trace_and_log_weight.first.gradients(nothing, scaler, accum);
+            if (iter % 100 == 0) {
+                // evaluate
+                double objective = estimate_objective<Model>(rng, parameters, data);
+                cout << "iter: " << iter << ", objective: " << objective << endl;
             }
 
-            // do SGD update
-            accum.update_module_gradients();
+        }
+    }
+
+    void multi_threaded_sgd_training(std::mt19937& rng, ModelModule& parameters, const dataset_t& data,
+                                      size_t iters, size_t minibatch_size, double learning_rate) {
+        torch::optim::SGD sgd {parameters.all_parameters(), torch::optim::SGDOptions(learning_rate).
+                dampening(0.0).
+                momentum(0.0)};
+        gen::GradientAccumulator accum {parameters};
+
+        for (size_t iter = 0; iter < iters; iter++) {
+
+            single_threaded_gradient_estimation(rng, parameters, data, minibatch_size, accum);
             sgd.step();
 
             if (iter % 100 == 0) {
@@ -213,6 +237,6 @@ int main(int argc, char* argv[]) {
     std::cout << "initial objective for random parameters: " << initial << std::endl;
 
     // do training
-    single_threaded_sgd_training(rng, parameters, data, 1000, 64, 0.00001);
+    single_threaded_sgd_training(rng, parameters, data, 100000, 64, 0.0000001);
 
 }
