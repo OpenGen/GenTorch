@@ -20,7 +20,7 @@ add_library(gen_library
         ${HEADER_LIST})
 
 target_include_directories(gen_library PUBLIC ../include)
-target_link_libraries(gen_library "${TORCH_LIBRARIES}")
+target_link_libraries(gen_library ${TORCH_LIBRARIES})
 
 # All users of this library will need at least C++17
 target_compile_features(gen_library PUBLIC cxx_std_17)
