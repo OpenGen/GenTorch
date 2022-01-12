@@ -74,7 +74,12 @@ public:
     typedef return_type R;
     typedef dist_type D;
 
-    PrimitiveGenFn(args_type args, dist_type dist) : args_tracked_{args}, dist_{dist} {}
+    PrimitiveGenFn(args_type args, dist_type dist) : args_tracked_{args}, dist_{dist} {
+        // NOTE: if the user is constructing us within the body of a DML generative function, then
+        // we need inference mode to be disabled here. If there user is constructing us in their inference program
+        // then we would typically want inference mode to be enabled. For now, we trust that users remember
+        // to set InferenceMode in their inference (and learning) program.
+    }
 
     [[nodiscard]] args_type get_args() const {
         return args_tracked_;

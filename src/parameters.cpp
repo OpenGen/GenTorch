@@ -26,7 +26,7 @@ void GradientAccumulator::update_module_gradients(bool reset) {
     for (const auto& source : gradients_) {
         Tensor& destination = all_parameters_[i++].mutable_grad();
         if (destination.defined()) {
-            destination.add_(source);
+            destination.sub_(source); // because torch optimizers always minimize
         } else {
             destination = source.clone();
         }

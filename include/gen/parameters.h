@@ -104,6 +104,7 @@ private:
 
 class EmptyModule : public Module {};
 
+// NOTE: cannot currently be used with DMLGenFn's that use EmptyModule, only distributions
 const EmptyModule empty_module_singleton {};
 
 }
