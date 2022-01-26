@@ -83,6 +83,8 @@ public:
 
 // code generation and loading
 // TODO use clang API (e.g. maybe its C++ AST facilities) instead
+// TODO the current approach to loading code is also messy because it involves the filesystem (see https://stackoverflow.com/questions/69655099/what-would-happen-if-i-delete-replace-the-shared-library-after-it-has-been-expli)
+// TODO see how Julia loads generated code
 
 void generate_importance(const Model& model, const AddressSchema& schema, const char* cpp_filename) {
     std::stringstream ss;
