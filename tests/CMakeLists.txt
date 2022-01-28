@@ -8,6 +8,7 @@ FetchContent_MakeAvailable(Catch2)
 
 # Tests need to be added as executables first
 add_executable(testlib
+        test_seed_sequence.cpp
         test_address.cpp
         test_parameters.cpp
         test_trie.cpp

@@ -27,6 +27,12 @@
  * SOFTWARE.
  */
 
+// marcoct: This code was adapted from https://gist.github.com/imneme/540829265469e673d045
+// with the following modifications:
+// 1. the random_generator and uniform_distribution types are removed (we are only using
+// the seed_seq_fe functionality)
+// 2. the default copy constructor is enabled for the seed_seq_fe class
+
 #ifndef RANDUTILS_H
 #define RANDUTILS_H 1
 
@@ -250,7 +256,12 @@ namespace randutils {
         void mix_entropy(InputIter begin, InputIter end);
 
     public:
-        seed_seq_fe(const seed_seq_fe&)     = delete;
+
+        // marcoct: we are adding a copy constructor for convenience
+        // no copy constructor does not seem to be part of the SeedSequence concept
+        // seehttps://en.cppreference.com/w/cpp/named_req/SeedSequence
+        seed_seq_fe(const seed_seq_fe& other) = default;
+
         void operator=(const seed_seq_fe&)  = delete;
 
         template <typename T>
@@ -555,256 +566,7 @@ namespace randutils {
     using auto_seed_128 = auto_seeded<seed_seq_fe128>;
     using auto_seed_256 = auto_seeded<seed_seq_fe256>;
 
-
-//////////////////////////////////////////////////////////////////////////////
-//
-// uniform_distribution
-//
-//////////////////////////////////////////////////////////////////////////////
-
-/*
- * This template typedef provides either
- *    - uniform_int_distribution, or
- *    - uniform_real_distribution
- * depending on the provided type
- */
-
-    template <typename Numeric>
-    using uniform_distribution = typename std::conditional<
-            std::is_integral<Numeric>::value,
-            std::uniform_int_distribution<Numeric>,
-            std::uniform_real_distribution<Numeric> >::type;
-
-
-
-//////////////////////////////////////////////////////////////////////////////
-//
-// random_generator
-//
-//////////////////////////////////////////////////////////////////////////////
-
-/*
- * randutils::random_generator
- *
- *   An Easy-to-Use Random API
- *
- *   Provides all the power of C++11's random number facility in an easy-to
- *   use wrapper.
- *
- *   In normal use, it's accessed via one of the following type aliases, which
- *   also use auto_seed_256 by default
- *
- *       randutils::default_rng
- *       randutils::mt19937_rng
- *
- *   It's discussed in detail at
- *       http://www.pcg-random.org/posts/ease-of-use-without-loss-of-power.html
- */
-
-    template <typename RandomEngine = std::default_random_engine,
-            typename DefaultSeedSeq = auto_seed_256>
-    class random_generator {
-    public:
-        using engine_type       = RandomEngine;
-        using default_seed_type = DefaultSeedSeq;
-    private:
-        engine_type engine_;
-
-        // This SFNAE evilness provides a mechanism to cast classes that aren't
-        // themselves (technically) Seed Sequences but derive from a seed
-        // sequence to be passed to functions that require actual Seed Squences.
-        // To do so, the class should provide a the type base_seed_seq and a
-        // base() member function.
-
-        template <typename T>
-        static constexpr bool has_base_seed_seq(typename T::base_seed_seq*)
-        {
-            return true;
-        }
-
-        template <typename T>
-        static constexpr bool has_base_seed_seq(...)
-        {
-            return false;
-        }
-
-
-        template <typename SeedSeqBased>
-        static auto seed_seq_cast(SeedSeqBased&& seq,
-                                  typename std::enable_if<
-                                          has_base_seed_seq<SeedSeqBased>(0)>::type* = 0)
-        -> decltype(seq.base())
-        {
-            return seq.base();
-        }
-
-        template <typename SeedSeq>
-        static SeedSeq seed_seq_cast(SeedSeq&& seq,
-                                     typename std::enable_if<
-                                             !has_base_seed_seq<SeedSeq>(0)>::type* = 0)
-        {
-            return seq;
-        }
-
-    public:
-        template <typename Seeding = default_seed_type,
-                typename... Params>
-        random_generator(Seeding&& seeding = default_seed_type{})
-                : engine_{seed_seq_cast(std::forward<Seeding>(seeding))}
-        {
-            // Nothing (else) to do
-        }
-
-        // Work around Clang DR777 bug in Clang 3.6 and earlier by adding a
-        // redundant overload rather than mixing parameter packs and default
-        // arguments.
-        //     https://llvm.org/bugs/show_bug.cgi?id=23029
-        template <typename Seeding,
-                typename... Params>
-        random_generator(Seeding&& seeding, Params&&... params)
-                : engine_{seed_seq_cast(std::forward<Seeding>(seeding)),
-                          std::forward<Params>(params)...}
-        {
-            // Nothing (else) to do
-        }
-
-        template <typename Seeding = default_seed_type,
-                typename... Params>
-        void seed(Seeding&& seeding = default_seed_type{})
-        {
-            engine_.seed(seed_seq_cast(seeding));
-        }
-
-        // Work around Clang DR777 bug in Clang 3.6 and earlier by adding a
-        // redundant overload rather than mixing parameter packs and default
-        // arguments.
-        //     https://llvm.org/bugs/show_bug.cgi?id=23029
-        template <typename Seeding,
-                typename... Params>
-        void seed(Seeding&& seeding, Params&&... params)
-        {
-            engine_.seed(seed_seq_cast(seeding), std::forward<Params>(params)...);
-        }
-
-
-        RandomEngine& engine()
-        {
-            return engine_;
-        }
-
-        template <typename ResultType,
-                template <typename> class DistTmpl = std::normal_distribution,
-                typename... Params>
-        ResultType variate(Params&&... params)
-        {
-            DistTmpl<ResultType> dist(std::forward<Params>(params)...);
-
-            return dist(engine_);
-        }
-
-        template <typename Numeric>
-        Numeric uniform(Numeric lower, Numeric upper)
-        {
-            return variate<Numeric,uniform_distribution>(lower, upper);
-        }
-
-        template <template <typename> class DistTmpl = uniform_distribution,
-                typename Iter,
-                typename... Params>
-        void generate(Iter first, Iter last, Params&&... params)
-        {
-            using result_type =
-            typename std::remove_reference<decltype(*(first))>::type;
-
-            DistTmpl<result_type> dist(std::forward<Params>(params)...);
-
-            std::generate(first, last, [&]{ return dist(engine_); });
-        }
-
-        template <template <typename> class DistTmpl = uniform_distribution,
-                typename Range,
-                typename... Params>
-        void generate(Range&& range, Params&&... params)
-        {
-            generate<DistTmpl>(std::begin(range), std::end(range),
-                               std::forward<Params>(params)...);
-        }
-
-        template <typename Iter>
-        void shuffle(Iter first, Iter last)
-        {
-            std::shuffle(first, last, engine_);
-        }
-
-        template <typename Range>
-        void shuffle(Range&& range)
-        {
-            shuffle(std::begin(range), std::end(range));
-        }
-
-
-        template <typename Iter>
-        Iter choose(Iter first, Iter last)
-        {
-            auto dist = std::distance(first, last);
-            if (dist < 2)
-                return first;
-            using distance_type = decltype(dist);
-            distance_type choice = uniform(distance_type(0), --dist);
-            std::advance(first, choice);
-            return first;
-        }
-
-        template <typename Range>
-        auto choose(Range&& range) -> decltype(std::begin(range))
-        {
-            return choose(std::begin(range), std::end(range));
-        }
-
-
-        template <typename Range>
-        auto pick(Range&& range) -> decltype(*std::begin(range))
-        {
-            return *choose(std::begin(range), std::end(range));
-        }
-
-        template <typename T>
-        auto pick(std::initializer_list<T> range) -> decltype(*range.begin())
-        {
-            return *choose(range.begin(), range.end());
-        }
-
-
-        template <typename Size, typename Iter>
-        Iter sample(Size to_go, Iter first, Iter last)
-        {
-            auto total = std::distance(first, last);
-            using value_type = decltype(*first);
-
-            return std::stable_partition(first, last,
-                                         [&](const value_type&) {
-                                             --total;
-                                             using distance_type = decltype(total);
-                                             distance_type zero{};
-                                             if (uniform(zero, total) < to_go) {
-                                                 --to_go;
-                                                 return true;
-                                             } else {
-                                                 return false;
-                                             }
-                                         });
-        }
-
-        template <typename Size, typename Range>
-        auto sample(Size to_go, Range&& range) -> decltype(std::begin(range))
-        {
-            return sample(to_go, std::begin(range), std::end(range));
-        }
-    };
-
-    using default_rng = random_generator<std::default_random_engine>;
-    using mt19937_rng = random_generator<std::mt19937>;
-
+    // NOTE: th
 }
 
 #endif // RANDUTILS_H
