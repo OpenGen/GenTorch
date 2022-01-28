@@ -1,3 +1,5 @@
+#include <barrier>
+
 #include <torch/torch.h>
 #include <gen/address.h>
 #include <gen/dml.h>
@@ -38,6 +40,7 @@ namespace gen::examples::sgd {
             const auto& z = tracer.get_args();
             auto x = tracer.call({"x"}, Normal(z.index({0}), tensor(1.0)));
             auto y = tracer.call({"y"}, Normal(z.index({1}), tensor(1.0)));
+            return nothing;
         }
     };
 
@@ -68,6 +71,7 @@ namespace gen::examples::sgd {
             assert(h2.sizes().equals({2}));
             auto x = tracer.call({"x"}, Normal(h2.index({0}), tensor(1.0)));
             auto y = tracer.call({"y"}, Normal(h2.index({1}), tensor(1.0)));
+            return nothing;
         }
     };
 
@@ -176,16 +180,30 @@ namespace gen::examples::sgd {
     }
 
     void multi_threaded_sgd_training(std::mt19937& rng, ModelModule& parameters, const dataset_t& data,
-                                      size_t iters, size_t minibatch_size, double learning_rate) {
-        torch::optim::SGD sgd {parameters.all_parameters(), torch::optim::SGDOptions(learning_rate).
-                dampening(0.0).
-                momentum(0.0)};
-        gen::GradientAccumulator accum {parameters};
+                                      const size_t iters, const size_t minibatch_size, const double learning_rate,
+                                      const size_t num_threads) {
+        assert(c10::InferenceMode::is_enabled());
+        torch::optim::SGD sgd {
+                parameters.all_parameters(),
+                torch::optim::SGDOptions(learning_rate).dampening(0.0).momentum(0.0)};
 
-        for (size_t iter = 0; iter < iters; iter++) {
+        // one accumulator per thread
+        std::vector<gen::GradientAccumulator> accums;
+        for (int i = 0; i < num_threads; i++) {
+            accums.emplace_back(gen::GradientAccumulator{parameters});
+        }
 
-            single_threaded_gradient_estimation(rng, parameters, data, minibatch_size, accum);
-            sgd.step();
+        const size_t n = data.size();
+        const double scaler = 1.0 / minibatch_size;
+        size_t iter = 0;
+        bool done = false;
+
+        // initial minibatch
+        std::vector<size_t> minibatch = generate_minibatch(rng, data.size(), minibatch_size);
+
+        auto iteration_serial_work = [iters,n,&iter,&done,&accums,&rng,&minibatch,&parameters,&data,&sgd]() {
+            c10::InferenceMode guard {true};
+            assert(iter < iters);
 
             if (iter % 100 == 0) {
                 // evaluate
@@ -193,9 +211,85 @@ namespace gen::examples::sgd {
                 cout << "iter: " << iter << ", objective: " << objective << endl;
             }
 
+            for (auto& accum : accums) {
+                accum.update_module_gradients();
+            }
+
+            sgd.step();
+
+            // are we done? (NOTE: this can be replaced with some other temination condition)
+            if (iter == iters-1) {
+                done = true;
+            } else {
+                // compute minibatch for next iteration
+                minibatch = generate_minibatch(rng, n, minibatch.size());
+            }
+            iter++;
+        };
+
+        std::barrier sync_point(num_threads, iteration_serial_work);
+
+        auto gradients = [&sync_point,
+                          &minibatch = std::as_const(minibatch),
+                          &data = std::as_const(data),
+                          &parameters,
+                          scaler,
+                          &done = std::as_const(done)](GradientAccumulator& accum, size_t start, size_t stop) {
+            c10::InferenceMode guard {true};
+
+            // TODO get this in a deterministic way from the input RNG
+            std::random_device rd{};
+            std::mt19937 rng{rd()};
+
+            while (!done) {
+                // do another iteration
+
+                // process our portion of the minibatch
+                for (size_t i = start; i < stop; i++) {
+
+                    // obtain datum
+                    auto[x, y, z] = data[minibatch[i]];
+
+                    // obtain trace
+                    Model model{z};
+                    ChoiceTrie constraints;
+                    constraints.set_value({"x"}, x);
+                    constraints.set_value({"y"}, y);
+                    auto trace_and_log_weight = model.generate(rng, parameters, constraints, true);
+
+                    // compute gradients for this datum
+                    trace_and_log_weight.first.gradients(nothing, scaler, accum);
+                }
+
+                sync_point.arrive_and_wait();
+            }
+        };
+
+        // start threads
+        std::vector<std::thread> threads;
+        size_t start = 0;
+        size_t stop;
+        for (int i = 0; i < num_threads; i++) {
+            size_t k = minibatch_size / num_threads;
+            size_t rem = minibatch_size % num_threads;
+            size_t block_size;
+            if (i < rem) {
+                block_size = k + 1;
+            } else {
+                block_size = k;
+            }
+            stop = start + block_size;
+            threads.emplace_back(gradients, std::ref(accums[i]), start, stop);
+            start = stop;
+        }
+
+
+
+        // join threads
+        for (auto& thread : threads) {
+            thread.join();
         }
     }
-
 
 }
 
@@ -207,19 +301,21 @@ int main(int argc, char* argv[]) {
     torch::set_num_threads(1);
     c10::InferenceMode guard {true};
 
-    static const std::string usage = "Usage: ./sgd <num_threads> <num_samples_per_thread>";
-    if (argc != 3) {
+    static const std::string usage = "Usage: ./sgd <minibatch_size> <num_threads> <num_iters>";
+    if (argc != 4) {
         throw std::invalid_argument(usage);
     }
+    size_t minibatch_size;
     size_t num_threads;
-    size_t num_samples_per_thread;
+    size_t num_iters;
     try {
-        num_threads = std::atoi(argv[1]);
-        num_samples_per_thread = std::atoi(argv[2]);
+        minibatch_size = std::atol(argv[1]);
+        num_threads = std::atol(argv[2]);
+        num_iters = std::atol(argv[3]);
     } catch (const std::invalid_argument& e) {
         throw std::invalid_argument(usage);
     }
-    cout << "num_threads: " << num_threads << ", num_samples_per_thread: " << num_samples_per_thread << endl;
+    cout << "minibatch_size: " << minibatch_size << " num_threads: " << num_threads << endl;
 
     std::random_device rd{};
     std::mt19937 rng{rd()};
@@ -237,6 +333,8 @@ int main(int argc, char* argv[]) {
     std::cout << "initial objective for random parameters: " << initial << std::endl;
 
     // do training
-    single_threaded_sgd_training(rng, parameters, data, 100000, 64, 0.0000001);
+//    single_threaded_sgd_training(rng, parameters, data, 100000, minibatch_size, 0.0000001);
+
+    multi_threaded_sgd_training(rng, parameters, data, num_iters, minibatch_size, 0.0000001, num_threads);
 
 }

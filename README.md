@@ -4,9 +4,9 @@ This repository is based on the hypothesis that a port of [Gen](gen.dev) to C++,
 
 ## Dependencies
 
-### C++ compiler supporting C++17
+### C++ compiler supporting C++20
 
-For example, either [clang++](https://clang.llvm.org/get_started.html) or [g++](https://gcc.gnu.org/).
+For example, either [clang++-13](https://clang.llvm.org/get_started.html) or [g++-11](https://gcc.gnu.org/).
 
 ### CMake 3.7 or above
 
