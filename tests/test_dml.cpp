@@ -209,7 +209,7 @@ TEST_CASE("gradients with no parameters", "[gradients, dml]") {
 
 namespace gen::tests::dml {
 
-struct ParametersTestCalleeModule : public gen::Module {
+struct ParametersTestCalleeModule : public gen::Parameters {
     Tensor theta1;
     ParametersTestCalleeModule() {
         theta1 = register_parameter("theta1", tensor(1.0));
@@ -229,7 +229,7 @@ public:
     }
 };
 
-struct ParametersTestCallerModule : public gen::Module {
+struct ParametersTestCallerModule : public gen::Parameters {
     Tensor theta2;
     shared_ptr<ParametersTestCalleeModule> callee_params {nullptr};
     ParametersTestCallerModule() {
@@ -289,7 +289,7 @@ TEST_CASE("parameter gradients and generative function calls", "[dml]") {
 
 namespace gen::tests::dml {
 
-    struct ParametersTestTorchCallerModule : public gen::Module {
+    struct ParametersTestTorchCallerModule : public gen::Parameters {
         torch::nn::Linear linear {nullptr};
         ParametersTestTorchCallerModule() {
             linear = register_torch_module("linear", torch::nn::Linear(3, 2));

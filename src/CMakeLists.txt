@@ -5,6 +5,7 @@ set(HEADER_LIST
         "${Gen_SOURCE_DIR}/include/gen/conversions.h"
         "${Gen_SOURCE_DIR}/include/gen/trie.h"
         "${Gen_SOURCE_DIR}/include/gen/parameters.h"
+        "${Gen_SOURCE_DIR}/include/gen/sgd.h"
         "${Gen_SOURCE_DIR}/include/gen/trace.h"
         "${Gen_SOURCE_DIR}/include/gen/dml.h"
         "${Gen_SOURCE_DIR}/include/gen/distributions/distributions.h"

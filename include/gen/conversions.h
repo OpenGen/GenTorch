@@ -26,6 +26,15 @@ namespace gen {
         return {start, value};
     }
 
+// *************
+// ** Nothing **
+// *************
+
+    typedef std::nullptr_t Nothing;
+    constexpr Nothing nothing = nullptr;
+
+    Nothing zero_gradient(const Nothing& value);
+
 // ************
 // ** Tensor **
 // ************
@@ -33,6 +42,8 @@ namespace gen {
     pair<size_t, Tensor> roll(const vector<Tensor> &unrolled, size_t start, const Tensor &value);
 
     void unroll(vector<Tensor> &unrolled, const Tensor &value);
+
+    Tensor zero_gradient(const Tensor& value); // TODO implement
 
 // ***************
 // ** pair<T,U> **

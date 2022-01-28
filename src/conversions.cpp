@@ -10,6 +10,14 @@ using std::pair;
 
 namespace gen {
 
+// *************
+// ** Nothing **
+// *************
+
+    Nothing zero_gradient(const Nothing& value) {
+        return nothing;
+    }
+
 // *************************************
 // ** Tensor (scalar numerical value) **
 // *************************************

@@ -24,7 +24,7 @@ See the License for the specific language governing permissions and
 
 class BarModule;
 
-struct FooModule : public gen::Module {
+struct FooModule : public gen::Parameters {
 
     FooModule(int64_t n, int64_t m) {
         a = register_parameter("a", torch::randn({n, m}));
@@ -41,7 +41,7 @@ struct FooModule : public gen::Module {
     std::shared_ptr<BarModule> bar {nullptr};
 };
 
-struct BarModule : public gen::Module {
+struct BarModule : public gen::Parameters {
 
     BarModule(int64_t n, int64_t m) {
         b = register_parameter("b", torch::randn({n, m}));
