@@ -14,16 +14,18 @@ See the License for the specific language governing permissions and
 ==============================================================================*/
 
 #include <catch2/catch.hpp>
-#include <gen/utils/seed_sequence.h>
+#include <gen/utils/randutils.h>
+
+using seed_seq_fe128 = randutils::seed_seq_fe<4, uint32_t>;
 
 #include <set>
 
 TEST_CASE("initialization", "[seed_sequence]") {
 
-    std::vector<SpawnableSeedSequence> seqs;
-    auto ss0 = seqs.emplace_back(SpawnableSeedSequence{0});
-    auto ss1 = seqs.emplace_back(SpawnableSeedSequence{1});
-    auto ss2 = seqs.emplace_back(SpawnableSeedSequence{0, 0});
+    std::vector<seed_seq_fe128> seqs;
+    auto ss0 = seqs.emplace_back(seed_seq_fe128{0});
+    auto ss1 = seqs.emplace_back(seed_seq_fe128{1});
+    auto ss2 = seqs.emplace_back(seed_seq_fe128{0, 0});
 
     // check that they generate different seeds
     std::set<uint32_t> seeds;
@@ -50,8 +52,8 @@ TEST_CASE("spawning", "[seed_sequence]") {
     // 1. they 'generate' different seeds
     // 2. mt19337 RNGs initialized with seeds generated from them produce different streams
 
-    std::vector<SpawnableSeedSequence> seqs;
-    auto ss0 = seqs.emplace_back(SpawnableSeedSequence{1});
+    std::vector<seed_seq_fe128> seqs;
+    auto ss0 = seqs.emplace_back(seed_seq_fe128{1});
     auto ss1 = seqs.emplace_back(ss0.spawn());
     auto ss2 = seqs.emplace_back(ss0.spawn());
     auto ss3 = seqs.emplace_back(ss1.spawn());
@@ -65,6 +67,7 @@ TEST_CASE("spawning", "[seed_sequence]") {
         ss.generate(seed.begin(), seed.end());
         uint32_t seed_int = seed[0];
         REQUIRE(seeds.find(seed_int) == seeds.end());
+        seeds.insert(seed_int);
     }
 
     // check that a MT19337 initialized from them has a different sequence
@@ -73,6 +76,8 @@ TEST_CASE("spawning", "[seed_sequence]") {
         std::mt19937 rng(ss);
         uint32_t value = rng();
         REQUIRE(random_values.find(value) == random_values.end());
+        random_values.insert(value);
     }
 
 }
+

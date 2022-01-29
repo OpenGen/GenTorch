@@ -13,7 +13,8 @@ add_executable(testlib
         test_parameters.cpp
         test_trie.cpp
         test_conversions.cpp
-        test_dml.cpp)
+        test_dml.cpp
+        test_sgd.cpp)
 
 # I'm using C++17 in the test
 target_compile_features(testlib PRIVATE cxx_std_17)

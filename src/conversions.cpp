@@ -3,12 +3,21 @@
 #include <torch/torch.h>
 
 #include <vector>
+#include <string>
+#include <sstream>
 
 using torch::Tensor;
 using std::vector;
 using std::pair;
 
 namespace gen {
+
+    std::string __attribute__ ((noinline)) print(const Tensor& tensor) {
+        std::stringstream ss;
+        ss << tensor;
+        std::cout << tensor << std::flush;
+        return ss.str();
+    }
 
 // *************
 // ** Nothing **

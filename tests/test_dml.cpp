@@ -263,8 +263,8 @@ TEST_CASE("parameter gradients and generative function calls", "[dml]") {
     // compute expected gradients with respect to theta1 and theta2
     NormalDist dist {x + parameters.callee_params->theta1, tensor(2.0)};
     auto log_density_grad = dist.log_density_gradient(z1);
-    Tensor expected_theta1_grad = (std::get<1>(log_density_grad) + retval_grad) * scaler;
-    Tensor expected_theta2_grad = retval_grad * scaler;
+    Tensor expected_theta1_grad = ((std::get<1>(log_density_grad) + retval_grad) * scaler).negative();
+    Tensor expected_theta2_grad = (retval_grad * scaler).negative();
 
     // compute actual gradients with respect to theta1 and theta2
     GradientAccumulator accum {parameters};
@@ -318,7 +318,7 @@ TEST_CASE("parameter gradients and torch modules", "[dml]") {
     double scaler = 6.0;
 
     // compute expected gradients with respect to theta1 and theta2
-    Tensor expected_bias_grad = tensor({1.0, 1.0}) * retval_grad * scaler;
+    Tensor expected_bias_grad = (tensor({1.0, 1.0}) * retval_grad * scaler).negative();
 
     // compute actual gradients with respect to theta1 and theta2
     GradientAccumulator accum {parameters};

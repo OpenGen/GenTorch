@@ -28,7 +28,7 @@ void GradientAccumulator::update_module_gradients(bool reset) {
         if (destination.defined()) {
             destination.sub_(source); // because torch optimizers always minimize
         } else {
-            destination = source.clone();
+            destination = source.negative();
         }
         if (reset) {
             source.zero_();

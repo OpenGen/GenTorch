@@ -5,10 +5,11 @@
 #include <vector>
 #include <utility>
 #include <random>
+#include <barrier> // NOTE: requires C++20 or c++17 with experimental (consider using boost version or re-implementing)
 
 #include <torch/torch.h>
 
-#include <gen/utils/seed_sequence.h>
+#include <gen/utils/randutils.h>
 
 
 // TODO provide a callback for generating data on-demand, that defaults to reading from a data set
@@ -82,19 +83,20 @@ namespace gen::sgd {
                 trace_and_log_weight.first.gradients(retval_grad, scaler, accum);
             }
             accum.update_module_gradients();
-            done = callback();
+            done = callback(minibatch);
         }
    }
 
     template <typename ParametersType,
-              typename StepCallbackType, typename DatasetType, typename UnpackDatumType>
+              typename StepCallbackType, typename DatasetType, typename UnpackDatumType,
+              typename SeedSequenceType>
     void train_supervised(ParametersType& parameters,
                           const StepCallbackType& callback,
                           const DatasetType& data,
                           const UnpackDatumType& unpack_datum,
                           const size_t minibatch_size,
                           const size_t num_threads,
-                          SpawnableSeedSequence& seed) {
+                          SeedSequenceType& seed) {
 
         c10::InferenceMode guard {true};
 
@@ -125,7 +127,7 @@ namespace gen::sgd {
             }
 
             // user callback, which implements the gradient step and decides whether we are done or not
-            done = callback();
+            done = callback(minibatch);
 
             // compute minibatch for next iteration
             if (!done) {
@@ -144,7 +146,7 @@ namespace gen::sgd {
                 &parameters,
                 scaler,
                 &done = std::as_const(done),
-                &unpack_datum](GradientAccumulator& accum, SpawnableSeedSequence& seed,
+                &unpack_datum](GradientAccumulator& accum, SeedSequenceType& seed,
                                size_t start, size_t stop) {
             c10::InferenceMode guard {true};
             std::mt19937 rng(seed);
@@ -163,7 +165,7 @@ namespace gen::sgd {
         // launch worker threads
         std::vector<std::pair<size_t,size_t>> blocks = even_blocks(minibatch_size, num_threads);
         std::vector<std::thread> threads;
-        std::vector<SpawnableSeedSequence> worker_seeds;
+        std::vector<SeedSequenceType> worker_seeds;
         for (size_t i = 0; i < num_threads; i++) {
             auto [start, stop] = blocks[i];
             auto& worker_seed = worker_seeds.emplace_back(seed.spawn());

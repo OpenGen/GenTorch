@@ -49,6 +49,8 @@ namespace gen {
 
         virtual std::any gradients(std::any retval_grad, double scaler, GradientAccumulator& accumulator) = 0;
 
+    // TODO - use new update / swap / fork interface
+
     };
 
 }

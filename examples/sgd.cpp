@@ -1,6 +1,3 @@
-#include <barrier>
-#include <functional>
-
 #include <torch/torch.h>
 
 #include <gen/address.h>
@@ -179,7 +176,7 @@ int main(int argc, char* argv[]) {
 
     size_t iter = 0;
 
-    auto callback = [&iter,&evaluate,num_iters,&sgd]() -> bool {
+    auto callback = [&iter,&evaluate,num_iters,&sgd](const std::vector<size_t>& minibatch) -> bool {
         sgd.step();
         if (iter % 100 == 0) {
             evaluate(iter);

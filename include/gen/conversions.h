@@ -9,6 +9,8 @@ using std::pair;
 
 namespace gen {
 
+    std::string __attribute__ ((noinline)) print(const Tensor& tensor);
+
 // Data types that can be used as arguments and return values of generative functions
 
 // **************************************

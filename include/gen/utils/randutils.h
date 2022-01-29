@@ -7,6 +7,7 @@
  * The MIT License (MIT)
  *
  * Copyright (c) 2015 Melissa E. O'Neill
+ * Copyright (c) 2022 The LibGen Authors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -250,10 +251,21 @@ namespace randutils {
             return result;
         }
 
+        std::vector<IntRep> entropy_;
+        std::vector<IntRep> spawn_keys_;
         std::array<IntRep, count> mixer_;
 
         template <typename InputIter>
         void mix_entropy(InputIter begin, InputIter end);
+
+        // private constructor used only for spawning
+        template <typename InputIter>
+        seed_seq_fe(InputIter begin, InputIter end, std::vector<IntRep>&& spawn_keys)
+                : entropy_(begin, end), spawn_keys_(spawn_keys)
+        {
+            seed(begin, end, spawn_keys_);
+            spawn_keys_.emplace_back(0);
+        }
 
     public:
 
@@ -264,17 +276,30 @@ namespace randutils {
 
         void operator=(const seed_seq_fe&)  = delete;
 
-        template <typename T>
-        seed_seq_fe(std::initializer_list<T> init)
+        template <typename InputIter>
+        seed_seq_fe(InputIter begin, InputIter end) : entropy_(begin, end)
         {
-            seed(init.begin(), init.end());
+            seed(begin, end, spawn_keys_);
+            spawn_keys_.emplace_back(0);
         }
 
-        template <typename InputIter>
-        seed_seq_fe(InputIter begin, InputIter end)
+        seed_seq_fe(std::initializer_list<IntRep> init) : entropy_(init)
         {
-            seed(begin, end);
+            seed(init.begin(), init.end(), spawn_keys_);
+            spawn_keys_.emplace_back(0);
         }
+
+        seed_seq_fe spawn() {
+            std::vector<IntRep> child_spawn_keys_(spawn_keys_); // copy constructor
+            seed_seq_fe<count,IntRep,mix_rounds> seq(entropy_.begin(), entropy_.end(), std::move(child_spawn_keys_));
+
+            // increment spawn key
+            // TODO: check for overflow
+            spawn_keys_.back()++;
+
+            return seq;
+        }
+
 
         // generating functions
         template <typename RandomAccessIterator>
@@ -289,9 +314,23 @@ namespace randutils {
         void param(OutputIterator dest) const;
 
         template <typename InputIter>
-        void seed(InputIter begin, InputIter end)
+        void seed(InputIter begin, InputIter end, const std::vector<IntRep>& spawn_keys)
         {
-            mix_entropy(begin, end);
+            // concatenate the given entropy with the spawn keys
+            size_t entropy_len = std::distance(begin, end);
+            size_t spawn_keys_len = spawn_keys.size();
+            size_t entropy_and_spawn_keys_len = std::max(count, entropy_len) + spawn_keys_len;
+            std::vector<IntRep> entropy_and_spawn_keys(entropy_and_spawn_keys_len);
+            // begin with the provided entropy, padded with zeros up to length 'count'
+            auto dest = std::copy(begin, end, entropy_and_spawn_keys.begin());
+            for (size_t i = entropy_len; i < count; i++)
+                *dest++ = 0;
+            // fill in the rest with the spawn keys
+            dest = std::copy(spawn_keys.begin(), spawn_keys.end(), dest);
+            assert(dest == entropy_and_spawn_keys.end());
+
+            mix_entropy(entropy_and_spawn_keys.begin(), entropy_and_spawn_keys.end());
+
             // For very small sizes, we do some additional mixing.  For normal
             // sizes, this loop never performs any iterations.
             for (size_t i = 1; i < mix_rounds; ++i)
@@ -566,7 +605,6 @@ namespace randutils {
     using auto_seed_128 = auto_seeded<seed_seq_fe128>;
     using auto_seed_256 = auto_seeded<seed_seq_fe256>;
 
-    // NOTE: th
 }
 
 #endif // RANDUTILS_H
