@@ -6,6 +6,8 @@
 #include <gen/distributions/uniform_continuous.h>
 #include <gen/utils/randutils.h>
 
+// TODO this example is not giving good estimates
+
 using randutils::seed_seq_fe128;
 
 using torch::Tensor, torch::tensor;
