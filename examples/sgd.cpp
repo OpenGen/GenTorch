@@ -5,7 +5,7 @@
 #include <gen/parameters.h>
 #include <gen/distributions/normal.h>
 #include <gen/utils/randutils.h>
-#include <gen/sgd.h>
+#include <gen/still/sgd.h>
 #include <gen/conversions.h>
 
 
@@ -175,7 +175,7 @@ int main(int argc, char* argv[]) {
         return objective;
     };
 
-    double learning_rate = 0.000001;
+    double learning_rate = 0.001;
     torch::optim::SGD sgd {
             parameters.all_parameters(),
             torch::optim::SGDOptions(learning_rate).dampening(0.0).momentum(0.0)};
@@ -183,6 +183,7 @@ int main(int argc, char* argv[]) {
     size_t iter = 0;
 
     auto callback = [&iter,&evaluate,num_iters,&sgd](const std::vector<size_t>& minibatch) -> bool {
+        c10::InferenceMode guard {true};
         sgd.step();
         sgd.zero_grad();
         if (iter % 100 == 0) {
