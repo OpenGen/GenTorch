@@ -25,7 +25,7 @@ using torch::Tensor;
 
 namespace gen {
 
-class Module;
+class Parameters;
 
 /**
  * Stores a copy of the gradients of a generative function.
@@ -38,17 +38,17 @@ class Module;
  * Not thread-safe. Each thread should have its own GradientAccumulator.
  */
 class GradientAccumulator {
-    friend class Module;
+    friend class Parameters;
 public:
-    explicit GradientAccumulator(const Module& module);
-    explicit GradientAccumulator(std::shared_ptr<Module> module_ptr);
-    std::vector<Tensor>::const_iterator begin(const Module& submodule);
-    std::vector<Tensor>::const_iterator end(const Module& submodule);
+    explicit GradientAccumulator(const Parameters& module);
+    explicit GradientAccumulator(std::shared_ptr<Parameters> module_ptr);
+    std::vector<Tensor>::const_iterator begin(const Parameters& submodule);
+    std::vector<Tensor>::const_iterator end(const Parameters& submodule);
     void update_module_gradients(bool reset = true);
 private:
     std::vector<Tensor> all_parameters_;
     std::vector<Tensor> gradients_;
-    std::unordered_map<const Module*, std::pair<size_t,size_t>> begin_end_idx_;
+    std::unordered_map<const Parameters*, std::pair<size_t,size_t>> begin_end_idx_;
 };
 
 /**
@@ -63,14 +63,15 @@ private:
  * See `::GradientAccumulator`.
  *
  */
-class Module {
+class Parameters {
     friend class GradientAccumulator;
 private:
     torch::OrderedDict<std::string, Tensor> local_parameters_;
     torch::OrderedDict<std::string, std::shared_ptr<torch::nn::Module>> torch_submodules_;
-    torch::OrderedDict<std::string, std::shared_ptr<Module>> gen_submodules_;
+    torch::OrderedDict<std::string, std::shared_ptr<Parameters>> gen_submodules_;
 public:
-    virtual ~Module() = default;
+    typedef GradientAccumulator accumulator_t; // part of the concept
+    virtual ~Parameters() = default;
 
     std::vector<Tensor> local_parameters() const;
 
@@ -99,11 +100,12 @@ public:
 private:
     void local_parameters(std::vector<Tensor>& parameters) const;
     void all_parameters(std::vector<Tensor>& parameters,
-                        std::unordered_map<const Module*, std::pair<size_t,size_t>>& begin_end_idx) const;
+                        std::unordered_map<const Parameters*, std::pair<size_t,size_t>>& begin_end_idx) const;
 };
 
-class EmptyModule : public Module {};
+class EmptyModule : public Parameters {};
 
+// NOTE: cannot currently be used with DMLGenFn's that use EmptyModule, only distributions
 const EmptyModule empty_module_singleton {};
 
 }

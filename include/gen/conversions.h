@@ -9,6 +9,8 @@ using std::pair;
 
 namespace gen {
 
+    std::string __attribute__ ((noinline)) print(const Tensor& tensor);
+
 // Data types that can be used as arguments and return values of generative functions
 
 // **************************************
@@ -26,6 +28,15 @@ namespace gen {
         return {start, value};
     }
 
+// *************
+// ** Nothing **
+// *************
+
+    typedef std::nullptr_t Nothing;
+    constexpr Nothing nothing = nullptr;
+
+    Nothing zero_gradient(const Nothing& value);
+
 // ************
 // ** Tensor **
 // ************
@@ -33,6 +44,8 @@ namespace gen {
     pair<size_t, Tensor> roll(const vector<Tensor> &unrolled, size_t start, const Tensor &value);
 
     void unroll(vector<Tensor> &unrolled, const Tensor &value);
+
+    Tensor zero_gradient(const Tensor& value); // TODO implement
 
 // ***************
 // ** pair<T,U> **

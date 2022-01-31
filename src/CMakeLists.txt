@@ -1,8 +1,10 @@
 set(HEADER_LIST
+        "${Gen_SOURCE_DIR}/include/gen/utils/randutils.h"
         "${Gen_SOURCE_DIR}/include/gen/address.h"
         "${Gen_SOURCE_DIR}/include/gen/conversions.h"
         "${Gen_SOURCE_DIR}/include/gen/trie.h"
         "${Gen_SOURCE_DIR}/include/gen/parameters.h"
+        "${Gen_SOURCE_DIR}/include/gen/sgd.h"
         "${Gen_SOURCE_DIR}/include/gen/trace.h"
         "${Gen_SOURCE_DIR}/include/gen/dml.h"
         "${Gen_SOURCE_DIR}/include/gen/distributions/distributions.h"
@@ -20,7 +22,7 @@ add_library(gen_library
         ${HEADER_LIST})
 
 target_include_directories(gen_library PUBLIC ../include)
-target_link_libraries(gen_library "${TORCH_LIBRARIES}")
+target_link_libraries(gen_library ${TORCH_LIBRARIES})
 
 # All users of this library will need at least C++17
 target_compile_features(gen_library PUBLIC cxx_std_17)

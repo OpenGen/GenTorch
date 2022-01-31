@@ -4,9 +4,9 @@ This repository is based on the hypothesis that a port of [Gen](gen.dev) to C++,
 
 ## Dependencies
 
-### C++ compiler supporting C++17
+### C++ compiler supporting C++20
 
-For example, either [clang++](https://clang.llvm.org/get_started.html) or [g++](https://gcc.gnu.org/).
+For example, either [clang++-13](https://clang.llvm.org/get_started.html) or [g++-11](https://gcc.gnu.org/).
 
 ### CMake 3.7 or above
 
@@ -65,8 +65,6 @@ cmake --build build --target docs
 
 [x] Implement `simulate`, `generate`, `get_score`, `get_choice_trie`, and `get_return_value` for DML.
 
-[~] Implement `update` for DML, without incremental computation.
-
 [x] Add ability to register `torch::nn::Module`s that are called directly within a DML function, and to recursively compute a vector of trainable parameters, like supported by `torch::nn::Module`).
 
 [x] Implement an example of multi-threaded simple Monte Carlo and importance sampling that exhibits near-linear scaling up to 32 cores on a c6i.metal instance.
@@ -90,7 +88,11 @@ types in arguments and return values, but not support for parameter gradients
 
 ### Milestone 2: Initial version of a multi-threaded inference and learning library
 
-[ ] Implement a library function for multi-threaded SGD-based learning of a generative function, illustrated using an inference model with stochastic structure.
+[x] Implement a library function for multi-threaded SGD-based learning of a generative function
+
+[~] Implement MCMC library functions for MH (with custom generative function proposal), MALA, and HMC, together with an initial spec for update and related trace functions, that allows traces to avoid allocation.
+
+[ ] Demonstrate that library using an inference model with stochastic structure.
 
 [ ] Implement a library function for multi-threaded importance sampling with a custom proposal, illustrated using a proposal trained using multi-threaded SGD.
 

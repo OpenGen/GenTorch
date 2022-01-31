@@ -209,7 +209,7 @@ TEST_CASE("gradients with no parameters", "[gradients, dml]") {
 
 namespace gen::tests::dml {
 
-struct ParametersTestCalleeModule : public gen::Module {
+struct ParametersTestCalleeModule : public gen::Parameters {
     Tensor theta1;
     ParametersTestCalleeModule() {
         theta1 = register_parameter("theta1", tensor(1.0));
@@ -229,7 +229,7 @@ public:
     }
 };
 
-struct ParametersTestCallerModule : public gen::Module {
+struct ParametersTestCallerModule : public gen::Parameters {
     Tensor theta2;
     shared_ptr<ParametersTestCalleeModule> callee_params {nullptr};
     ParametersTestCallerModule() {
@@ -263,8 +263,8 @@ TEST_CASE("parameter gradients and generative function calls", "[dml]") {
     // compute expected gradients with respect to theta1 and theta2
     NormalDist dist {x + parameters.callee_params->theta1, tensor(2.0)};
     auto log_density_grad = dist.log_density_gradient(z1);
-    Tensor expected_theta1_grad = (std::get<1>(log_density_grad) + retval_grad) * scaler;
-    Tensor expected_theta2_grad = retval_grad * scaler;
+    Tensor expected_theta1_grad = ((std::get<1>(log_density_grad) + retval_grad) * scaler).negative();
+    Tensor expected_theta2_grad = (retval_grad * scaler).negative();
 
     // compute actual gradients with respect to theta1 and theta2
     GradientAccumulator accum {parameters};
@@ -289,7 +289,7 @@ TEST_CASE("parameter gradients and generative function calls", "[dml]") {
 
 namespace gen::tests::dml {
 
-    struct ParametersTestTorchCallerModule : public gen::Module {
+    struct ParametersTestTorchCallerModule : public gen::Parameters {
         torch::nn::Linear linear {nullptr};
         ParametersTestTorchCallerModule() {
             linear = register_torch_module("linear", torch::nn::Linear(3, 2));
@@ -318,7 +318,7 @@ TEST_CASE("parameter gradients and torch modules", "[dml]") {
     double scaler = 6.0;
 
     // compute expected gradients with respect to theta1 and theta2
-    Tensor expected_bias_grad = tensor({1.0, 1.0}) * retval_grad * scaler;
+    Tensor expected_bias_grad = (tensor({1.0, 1.0}) * retval_grad * scaler).negative();
 
     // compute actual gradients with respect to theta1 and theta2
     GradientAccumulator accum {parameters};

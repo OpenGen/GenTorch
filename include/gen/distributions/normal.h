@@ -31,6 +31,9 @@ namespace gen::distributions::normal {
     const double pi = 3.141592653589793238462643383279502884;
     const double sqrt_2_pi = std::sqrt(2.0 * pi);
 
+    double log_density(double mean, double std, double x);
+    std::tuple<double, double, double> log_density_gradient(double mean, double std, double x);
+
     class NormalDist {
     public:
 
