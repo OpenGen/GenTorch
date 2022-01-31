@@ -35,6 +35,7 @@ using gen::dml::DMLGenFn;
 using gen::EmptyModule;
 using gen::distributions::normal::Normal;
 using gen::Nothing, gen::nothing;
+using std::cout, std::endl;
 
 struct ModelModule : public gen::Parameters {
     Tensor a;
@@ -143,6 +144,115 @@ TEST_CASE("multi-threaded matches single-threaded", "[sgd]") {
     // check that they match
     REQUIRE(parameters1.a.grad().allclose(parameters2.a.grad()));
     REQUIRE(parameters1.b.grad().allclose(parameters2.b.grad()));
+
+
+}
+
+struct SimpleOptimizationModelModule : public gen::Parameters {
+    Tensor mean;
+    SimpleOptimizationModelModule() {
+        c10::InferenceMode guard{false};
+        mean = register_parameter("mean", tensor(0.0));
+    }
+};
+
+struct SimpleOptimizationModel;
+
+struct SimpleOptimizationModel : public DMLGenFn<SimpleOptimizationModel, Nothing, Nothing, SimpleOptimizationModelModule> {
+    explicit SimpleOptimizationModel() : DMLGenFn<M, A, R, P>(nothing) {};
+    template<typename T>
+    return_type forward(T &tracer) const {
+        if (tracer.prepare_for_gradients()) {
+            assert(!c10::InferenceMode::is_enabled());
+        }
+        auto &parameters = tracer.get_parameters();
+        auto mean = parameters.mean;
+        auto x = tracer.call({"x"}, Normal(mean, tensor(1.0)));
+        assert(x.sizes().equals({}));
+        return nothing;
+    }
+};
+
+TEST_CASE("simple optimization problem", "[sgd]") {
+
+
+    auto unpack_datum = [](const Tensor& x) -> std::pair<SimpleOptimizationModel, gen::ChoiceTrie> {
+        SimpleOptimizationModel model;
+        gen::ChoiceTrie constraints;
+        constraints.set_value({"x"}, x);
+        return {model, constraints};
+    };
+
+    // data has 50 1s and 50 3s; the optimum mean should be 2.0
+    double expected_objective_optimum = 0.0;
+    double opt_mean = 2.0;
+    std::vector<Tensor> data;
+    for (size_t i = 0; i < 50; i++) {
+        double x = 1.0;
+        data.emplace_back(tensor(x));
+        expected_objective_optimum += gen::distributions::normal::log_density(opt_mean, 1.0, x);
+    }
+    for (size_t i = 0; i < 50; i++) {
+        double x = 3.0;
+        data.emplace_back(tensor(x));
+        expected_objective_optimum += gen::distributions::normal::log_density(opt_mean, 1.0, x);
+    }
+    expected_objective_optimum /= static_cast<double>(data.size());
+
+    double learning_rate = 0.01;
+
+    seed_seq_fe128 seed_seq {1};
+    std::mt19937 rng {seed_seq};
+    size_t num_iters = 400;
+    size_t minibatch_size = 64;
+
+    auto evaluate = [&data,&unpack_datum,&rng](size_t iter, SimpleOptimizationModelModule& parameters) -> double {
+        double objective = gen::sgd::estimate_objective(rng, parameters, data, unpack_datum);
+        return objective;
+    };
+
+    // single threaded
+    {
+        SimpleOptimizationModelModule parameters {};
+        torch::optim::SGD sgd {
+                parameters.all_parameters(),
+                torch::optim::SGDOptions(learning_rate).dampening(0.0).momentum(0.0)};
+        size_t iter = 0;
+        double objective;
+        auto callback = [&iter,&evaluate,&parameters,&objective,num_iters,&sgd](const std::vector<size_t>& minibatch) -> bool {
+            sgd.step();
+            sgd.zero_grad();
+            if (iter % 100 == 0)
+                objective = evaluate(iter, parameters);
+            return (iter++) == num_iters - 1;
+        };
+        evaluate(iter++, parameters);
+        gen::sgd::train_supervised_single_threaded(parameters, callback, data, unpack_datum, minibatch_size, rng);
+        REQUIRE(parameters.mean.allclose(tensor(opt_mean), 0.05, 0.05));
+        REQUIRE(std::abs(objective - expected_objective_optimum) < 0.01);
+    }
+
+    // multi threaded
+    {
+        size_t num_threads = 2;
+        SimpleOptimizationModelModule parameters {};
+        torch::optim::SGD sgd {
+                parameters.all_parameters(),
+                torch::optim::SGDOptions(learning_rate).dampening(0.0).momentum(0.0)};
+        size_t iter = 0;
+        double objective;
+        auto callback = [&iter,&evaluate,&parameters,&objective,num_iters,&sgd](const std::vector<size_t>& minibatch) -> bool {
+            sgd.step();
+            sgd.zero_grad();
+            if (iter % 100 == 0)
+                objective = evaluate(iter, parameters);
+            return (iter++) == num_iters - 1;
+        };
+        evaluate(iter++, parameters);
+        gen::sgd::train_supervised(parameters, callback, data, unpack_datum, minibatch_size, num_threads, seed_seq);
+        REQUIRE(parameters.mean.allclose(tensor(opt_mean), 0.05, 0.05));
+        REQUIRE(std::abs(objective - expected_objective_optimum) < 0.01);
+    }
 
 
 }
