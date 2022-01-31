@@ -6,24 +6,21 @@
 #include <utility>
 #include <random>
 #include <barrier> // NOTE: requires C++20 or c++17 with experimental (consider using boost version or re-implementing)
-
-#include <torch/torch.h>
-
 #include <gen/utils/randutils.h>
 
-
+// NOTE: this file does not depend on Torch
 // TODO provide a callback for generating data on-demand, that defaults to reading from a data set
-
 // TODO rename this namespace
 namespace gen::sgd {
 
-    std::vector<std::pair<size_t,size_t>> even_blocks(size_t num_elements, size_t num_threads) {
-        std::vector<std::pair<size_t,size_t>> blocks {num_threads};
+    // TODO move to sgd.cpp or a utility cpp file (is reusable for e.g. importance sampling)
+    std::vector<std::pair<size_t,size_t>> even_blocks(size_t num_elements, size_t num_blocks) {
+        std::vector<std::pair<size_t,size_t>> blocks {num_blocks};
         size_t start = 0;
         size_t stop;
-        for (int i = 0; i < num_threads; i++) {
-            size_t k = num_elements / num_threads;
-            size_t rem = num_elements % num_threads;
+        for (int i = 0; i < num_blocks; i++) {
+            size_t k = num_elements / num_blocks;
+            size_t rem = num_elements % num_blocks;
             size_t block_size;
             if (i < rem) {
                 block_size = k + 1;
@@ -69,8 +66,8 @@ namespace gen::sgd {
                                           const UnpackDatumType& unpack_datum,
                                           const size_t minibatch_size,
                                           RNGType& rng) {
-        c10::InferenceMode guard {true};
-        gen::GradientAccumulator accum {parameters};
+        typedef typename ParametersType::accumulator_t GradientAccumulatorType;
+        GradientAccumulatorType accum {parameters};
         bool done = false;
         const double scaler = 1.0 / static_cast<double>(minibatch_size);
         while (!done) {
@@ -97,13 +94,12 @@ namespace gen::sgd {
                           const size_t minibatch_size,
                           const size_t num_threads,
                           SeedSequenceType& seed) {
-
-        c10::InferenceMode guard {true};
+        typedef typename ParametersType::accumulator_t GradientAccumulatorType;
 
         // one gradient accumulator per thread
-        std::vector<gen::GradientAccumulator> accums;
+        std::vector<GradientAccumulatorType> accums;
         for (int i = 0; i < num_threads; i++) {
-            accums.emplace_back(gen::GradientAccumulator{parameters});
+            accums.emplace_back(GradientAccumulatorType{parameters});
         }
 
         const size_t data_size = data.size();
@@ -118,7 +114,6 @@ namespace gen::sgd {
 
         auto iteration_serial_stage = [data_size,&iter,&done,&accums,&rng,
                                       &minibatch,&parameters,&data,&callback]() {
-            c10::InferenceMode guard {true};
 
             // increments the gradients in the shared parameters object
             // and resets the per-thread gradient accumulators to zero
@@ -146,9 +141,8 @@ namespace gen::sgd {
                 &parameters,
                 scaler,
                 &done = std::as_const(done),
-                &unpack_datum](GradientAccumulator& accum, SeedSequenceType& seed,
+                &unpack_datum](GradientAccumulatorType& accum, SeedSequenceType& seed,
                                size_t start, size_t stop) {
-            c10::InferenceMode guard {true};
             std::mt19937 rng(seed);
             while (!done) {
                 for (size_t i = start; i < stop; i++) {

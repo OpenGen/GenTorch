@@ -4,9 +4,9 @@
 #include <gen/dml.h>
 #include <gen/parameters.h>
 #include <gen/distributions/normal.h>
-#include <gen/utils/seed_sequence.h>
+#include <gen/utils/randutils.h>
 #include <gen/sgd.h>
-#include <gen/conversions.h> // TODO we may need to rename this to 'types'
+#include <gen/conversions.h>
 
 
 using torch::Tensor, torch::tensor;
@@ -14,6 +14,8 @@ using std::vector, std::cout, std::endl;
 using gen::dml::DMLGenFn;
 using gen::EmptyModule;
 using gen::distributions::normal::Normal;
+using randutils::seed_seq_fe128;
+
 
 namespace gen::examples::sgd {
 
@@ -71,7 +73,6 @@ namespace gen::examples::sgd {
 
     struct ProblemGenerator : public DMLGenFn<ProblemGenerator, Nothing, Tensor, EmptyModule> {
         explicit ProblemGenerator() : DMLGenFn<M, A, R, P>(nothing) {};
-
         template<typename T>
         return_type forward(T &tracer) const {
             auto x = tracer.call({"z1"}, Normal(tensor(0.0), tensor(1.0)));
@@ -115,25 +116,30 @@ int main(int argc, char* argv[]) {
     torch::set_num_threads(1);
     c10::InferenceMode guard {true};
 
-    static const std::string usage = "Usage: ./sgd <minibatch_size> <num_threads> <num_iters>";
-    if (argc != 4) {
+    static const std::string usage = "Usage: ./sgd <minibatch_size> <num_threads> <num_iters> <seed>";
+    if (argc != 5) {
         throw std::invalid_argument(usage);
     }
     size_t minibatch_size;
     size_t num_threads;
     size_t num_iters;
+    uint32_t seed;
     try {
         minibatch_size = std::atoi(argv[1]);
         num_threads = std::atoi(argv[2]);
         num_iters = std::atoi(argv[3]);
+        seed = std::atoi(argv[4]);
     } catch (const std::invalid_argument& e) {
         throw std::invalid_argument(usage);
     }
-    cout << "minibatch_size: " << minibatch_size << " num_threads: " << num_threads << endl;
+    cout << "minibatch_size: " << minibatch_size << endl;
+    cout << " num_threads: " << num_threads << endl;
+    cout << " num_iters: " << num_iters << endl;
+    cout << "seed: " << seed << endl;
 
     std::random_device rd{};
-    SpawnableSeedSequence seed{rd()};
-    std::mt19937 rng(seed);
+    seed_seq_fe128 seed_seq{rd()};
+    std::mt19937 rng(seed_seq);
 
     auto unpack_datum_ground_truth = [](const datum_t &datum) -> std::pair<GroundTruth, gen::ChoiceTrie> {
         const auto& [x, y, z] = datum;
@@ -178,18 +184,14 @@ int main(int argc, char* argv[]) {
 
     auto callback = [&iter,&evaluate,num_iters,&sgd](const std::vector<size_t>& minibatch) -> bool {
         sgd.step();
+        sgd.zero_grad();
         if (iter % 100 == 0) {
             evaluate(iter);
         }
         return (iter++) == num_iters - 1;
     };
 
-    cout << "doing single-threaded training" << endl;
+    cout << "doing multi-threaded training" << endl;
     evaluate(iter++);
-    gen::sgd::train_supervised_single_threaded(parameters, callback, data, unpack_datum, minibatch_size, rng);
-
-    cout << "doing multi-threaded training (starting from where single-threaded training left off)" << endl;
-    iter = 0;
-    evaluate(iter++);
-    gen::sgd::train_supervised(parameters, callback, data, unpack_datum, minibatch_size, num_threads, seed);
+    gen::sgd::train_supervised(parameters, callback, data, unpack_datum, minibatch_size, num_threads, seed_seq);
 }

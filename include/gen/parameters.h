@@ -70,6 +70,7 @@ private:
     torch::OrderedDict<std::string, std::shared_ptr<torch::nn::Module>> torch_submodules_;
     torch::OrderedDict<std::string, std::shared_ptr<Parameters>> gen_submodules_;
 public:
+    typedef GradientAccumulator accumulator_t; // part of the concept
     virtual ~Parameters() = default;
 
     std::vector<Tensor> local_parameters() const;

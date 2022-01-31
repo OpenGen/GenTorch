@@ -22,6 +22,7 @@ std::vector<Tensor>::const_iterator GradientAccumulator::end(const Parameters& s
 }
 
 void GradientAccumulator::update_module_gradients(bool reset) {
+    c10::InferenceMode guard {true};
     size_t i = 0;
     for (const auto& source : gradients_) {
         Tensor& destination = all_parameters_[i++].mutable_grad();
@@ -37,9 +38,10 @@ void GradientAccumulator::update_module_gradients(bool reset) {
 }
 
 GradientAccumulator::GradientAccumulator(const Parameters& module) {
+    c10::InferenceMode guard {true};
     module.all_parameters(all_parameters_, begin_end_idx_);
     for (const auto& t : all_parameters_) {
-        gradients_.emplace_back(torch::zeros_like(t).detach());
+        gradients_.emplace_back(torch::zeros_like(t));
     }
 }
 
@@ -55,6 +57,7 @@ Tensor& Parameters::register_parameter(std::string name, Tensor tensor, bool req
 }
 
 void Parameters::local_parameters(std::vector<Tensor>& parameters) const {
+    c10::InferenceMode guard {true};
     for (const auto& parameter : local_parameters_) {
         parameters.emplace_back(parameter.value());
     }

@@ -90,7 +90,9 @@ types in arguments and return values, but not support for parameter gradients
 
 ### Milestone 2: Initial version of a multi-threaded inference and learning library
 
-[ ] Implement a library function for multi-threaded SGD-based learning of a generative function, illustrated using an inference model with stochastic structure.
+[x] Implement a library function for multi-threaded SGD-based learning of a generative function
+
+[ ] Demonstrate that library using an inference model with stochastic structure.
 
 [ ] Implement a library function for multi-threaded importance sampling with a custom proposal, illustrated using a proposal trained using multi-threaded SGD.
 

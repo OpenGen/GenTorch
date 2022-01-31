@@ -220,6 +220,7 @@ TEST_CASE("simple optimization problem", "[sgd]") {
         size_t iter = 0;
         double objective;
         auto callback = [&iter,&evaluate,&parameters,&objective,num_iters,&sgd](const std::vector<size_t>& minibatch) -> bool {
+            c10::InferenceMode guard {true};
             sgd.step();
             sgd.zero_grad();
             if (iter % 100 == 0)
@@ -242,6 +243,7 @@ TEST_CASE("simple optimization problem", "[sgd]") {
         size_t iter = 0;
         double objective;
         auto callback = [&iter,&evaluate,&parameters,&objective,num_iters,&sgd](const std::vector<size_t>& minibatch) -> bool {
+            c10::InferenceMode guard {true};
             sgd.step();
             sgd.zero_grad();
             if (iter % 100 == 0)
