@@ -63,20 +63,60 @@ namespace gen::still::mcmc {
 // *** Metropolis-Adjusted Langevin (MALA) ***
 // *******************************************
 
+    template <typename ChoiceBuffer, typename RNGType>
+    double mala_propose_values(ChoiceBuffer& proposal, const ChoiceBuffer& current,
+                               const ChoiceBuffer& gradient, double tau, RNGType& rng) {
+        double stdev = std::sqrt(2 * tau);
+        static std::normal_distribution<double> standard_normal {0.0, 1.0};
+        static double logSqrt2Pi = 0.5*std::log(2*M_PI);
+        double log_density = (current.cend() - current.cbegin()) * (-std::log(stdev) - logSqrt2Pi);
+
+        // first compute the mean in-place
+        proposal = current + (tau * gradient);
+
+        // then sample new values (over-writing the mean), and finish computing the log density
+        for (auto proposal_it = proposal.begin(); proposal_it != proposal.end(); proposal_it++) {
+            double standard_normal_increment = standard_normal(rng);
+            *proposal_it += (standard_normal_increment * stdev);
+            log_density += -0.5 * (standard_normal_increment * standard_normal_increment);
+        }
+        return log_density;
+    }
+
+    template <typename ChoiceBuffer>
+    double mala_assess(const ChoiceBuffer& proposed, const ChoiceBuffer& current,
+                       const ChoiceBuffer& gradient, double tau, ChoiceBuffer& storage) {
+        double stdev = std::sqrt(2 * tau);
+        static double logSqrt2Pi = 0.5*std::log(2*M_PI);
+        double log_density = (current.cend() - current.cbegin()) * (-std::log(stdev) - logSqrt2Pi);
+
+        ChoiceBuffer& proposal_mean = storage; // rename it
+        proposal_mean = current + (tau * gradient);
+
+        auto proposal_mean_it = proposal_mean.cbegin();
+        for (auto proposed_it = proposed.cbegin(); proposed_it != proposed.cend(); proposed_it++) {
+            double standard_normal_increment = (*proposed_it - *(proposal_mean_it++)) / stdev;
+            log_density += -0.5 * (standard_normal_increment * standard_normal_increment);
+        }
+        return log_density;
+    }
+
     template<typename TraceType, typename SelectionType, typename RNGType, typename ChoiceBufferType>
     bool mala(TraceType &trace, const SelectionType &selection, double tau,
-              ChoiceBufferType &choice_buffer, RNGType &rng) {
+              ChoiceBufferType &storage1, ChoiceBufferType& storage2, RNGType &rng) {
 
         // NOTE: these buffers are only valid up until the next call to update.
-        const auto &choice_gradients_buffer = trace.choice_gradients(selection);
-        const auto &choice_values_buffer = trace.choices(selection);
+        ChoiceBufferType& proposed_values = storage1;
+        double forward_log_density = mala_propose_values(proposed_values, trace.choices(selection),
+                                                         trace.choice_gradients(selection), tau, rng);
+        const auto& [log_weight, previous_values, retdiff] = trace.update(proposed_values, true, true);
 
-        // TODO do math and sample proposed values (fixme)
-        choice_buffer = choice_values_buffer + (tau * choice_gradients_buffer);
-//        choice_buffer = mala_sample_normals(choice_buffer, tau, rng); // TODO
+        // compute backward log density
+        double backward_log_density = mala_assess(previous_values, proposed_values,
+                                                  trace.choice_gradients(selection), tau,
+                                                  storage2);
 
-        const auto& [log_weight, backward_constraints, retdiff] = trace.update(choice_buffer, true, true);
-        double prob_accept = log_weight; // TODO calculate it, using backward constrinats
+        double prob_accept = std::min(1.0, std::exp(log_weight + backward_log_density - forward_log_density));
         std::bernoulli_distribution dist{prob_accept};
         bool accept = dist(rng);
         if (!accept) {
@@ -89,6 +129,23 @@ namespace gen::still::mcmc {
 // *** Hamiltonian Monte Carlo (HMC) ***
 // *************************************
 
+
+    template <typename ChoiceBufferType, typename RNGType>
+    void sample_momenta(ChoiceBufferType& momenta, RNGType& rng) {
+        static std::normal_distribution<double> standard_normal{0.0, 1.0};
+        for (auto& momentum : momenta)
+            momentum = standard_normal(rng);
+    }
+
+    template <typename ChoiceBufferType>
+    double assess_momenta(const ChoiceBufferType& momenta) {
+        static double logSqrt2Pi = 0.5*std::log(2*M_PI);
+        double sum = 0.0;
+        for (const auto& momentum : momenta)
+            sum += -0.5 * momentum * momentum;
+        return sum - (momenta.cend() - momenta.cbegin()) * logSqrt2Pi;
+    }
+
     template<typename TraceType, typename SelectionType, typename RNGType, typename ChoiceBufferType>
     bool hmc(TraceType &trace, const SelectionType &selection,
              size_t leapfrog_steps, double eps,
@@ -100,9 +157,8 @@ namespace gen::still::mcmc {
         const ChoiceBufferType* gradient_buffer = &trace.choice_gradients(selection);
 
         // this overwrites the memory in the buffer
-//        momenta_buffer = sample_momenta(gradient_buffer); // TODO implement
-//        double prev_momenta_score = assess_momenta(momenta_buffer); // TODO implement
-        double prev_momenta_score = 0.0;
+        sample_momenta(momenta_buffer, rng);
+        double prev_momenta_score = assess_momenta(momenta_buffer);
 
         double log_weight = 0.0;
         for (size_t step = 0; step < leapfrog_steps; step++) {
@@ -111,7 +167,7 @@ namespace gen::still::mcmc {
             momenta_buffer += (eps / 2.0) * (*gradient_buffer);
 
             // full step on positions
-            values_buffer += eps * momenta_buffer; // TODO invalid..., need another choice buffer.
+            values_buffer += eps * momenta_buffer;
 
             // get incremental log weight and new gradient
             bool save_prev_state = (step == 0);
@@ -124,10 +180,9 @@ namespace gen::still::mcmc {
             momenta_buffer += (eps / 2.0) * (*gradient_buffer);
         }
 
-//        double new_momenta_score = assess_momenta_negative(momenta_buffer); // TODO implement
-        double new_momenta_score = 0.0;
+        double new_momenta_score = assess_momenta(momenta_buffer);
 
-        double prob_accept = exp(log_weight + new_momenta_score - prev_momenta_score);
+        double prob_accept = std::min(1.0, std::exp(log_weight + new_momenta_score - prev_momenta_score));
         std::bernoulli_distribution dist{prob_accept};
         bool accept = dist(rng);
         if (!accept) {
