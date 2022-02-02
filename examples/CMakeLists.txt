@@ -13,3 +13,9 @@ target_compile_features(importance_sampling PRIVATE cxx_std_17)
 add_executable(sgd sgd.cpp)
 target_link_libraries(sgd PRIVATE gen_library)
 target_compile_features(sgd PRIVATE cxx_std_17)
+
+# sgd
+add_executable(mcmc mcmc.cpp)
+target_include_directories(mcmc PRIVATE ../third_party/eigen)
+target_link_libraries(mcmc PRIVATE gen_library)
+target_compile_features(mcmc PRIVATE cxx_std_17)
