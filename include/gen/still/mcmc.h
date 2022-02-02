@@ -11,7 +11,7 @@ namespace gen::still::mcmc {
 // ***********************************************************************
 
     double mh_accept_prob(double model_log_weight, double proposal_forward_score, double proposal_backward_score) {
-        return exp(model_log_weight + proposal_backward_score - proposal_forward_score);
+        return std::min(1.0, std::exp(model_log_weight + proposal_backward_score - proposal_forward_score));
     }
 
 // make_proposal must be a callable that takes a model trace as its only argument and returns a generative function
@@ -32,7 +32,7 @@ namespace gen::still::mcmc {
         const auto& [model_log_weight, reverse_change, retdiff] = model_trace.update(
                 change, true, prepare_for_gradient);
         auto backward_proposal = make_proposal(model_trace);
-        double proposal_backward_score = backward_proposal.assess(rng, proposal_params, reverse_change);
+        double proposal_backward_score = backward_proposal.assess(reverse_change, rng, proposal_params);
         double prob_accept = mh_accept_prob(model_log_weight, proposal_forward_score, proposal_backward_score);
         std::bernoulli_distribution dist{prob_accept};
         bool accept = dist(rng);
