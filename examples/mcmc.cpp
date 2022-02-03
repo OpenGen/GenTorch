@@ -3,6 +3,7 @@
 #include <utility>
 #include <vector>
 #include <stdexcept>
+#include <memory>
 #include <array>
 #include <gen/distributions/normal.h>
 #include <gen/utils/randutils.h>
@@ -98,16 +99,17 @@ public:
 
     // simulate into a new trace object
     template <typename RNGType>
-    Trace simulate(RNGType& rng, Parameters& parameters, bool prepare_for_gradient=false) const;
+    std::unique_ptr<Trace> simulate(RNGType& rng, Parameters& parameters, bool prepare_for_gradient=false) const;
 
     // simulate into an existing trace object (overwriting existing contents)
     template <typename RNGType>
-    void simulate(Trace& trace, RNGType& rng, Parameters& parameters, bool prepare_for_gradient=false) const;
+    void simulate(Trace& trace, RNGType& rng, Parameters& parameters,
+                  bool prepare_for_gradient=false) const;
 
     // generate into a new trace object
     template <typename RNGType>
-    std::pair<Trace,double> generate(const EmptyChoiceBuffer& constraints,
-                                     RNGType& rng, Parameters& parameters, bool prepare_for_gradient=false) const;
+    std::pair<std::unique_ptr<Trace>,double> generate(const EmptyChoiceBuffer& constraints, RNGType& rng,
+                                                      Parameters& parameters, bool prepare_for_gradient=false) const;
 
     // generate into an existing trace object (overwriting existing contents)
     template <typename RNGType>
@@ -144,6 +146,12 @@ private:
     model_{std::move(model)}, score_{score}, latents_{latents}, latent_gradient_{latent_gradient},
         can_be_reverted_{false}, gradients_computed_{true} {}
 public:
+    Trace() = delete;
+    Trace(const Trace& other) = delete;
+    Trace(Trace&& other) = delete;
+    Trace& operator=(const Trace& other) = delete;
+    Trace& operator=(Trace&& other) noexcept = delete;
+
     [[nodiscard]] double get_score() const;
     [[nodiscard]] const latent_choices_t& choices() const;
     [[nodiscard]] const latent_choices_t& choices(const LatentsSelection& selection) const;
@@ -166,7 +174,7 @@ public:
 // ****************************
 
 template <typename RNGType>
-Trace Model::simulate(RNGType& rng, Parameters& parameters, bool prepare_for_gradient) const {
+std::unique_ptr<Trace> Model::simulate(RNGType& rng, Parameters& parameters, bool prepare_for_gradient) const {
     latent_choices_t latents;
     exact_sample(latents, rng);
     auto log_density = logpdf(latents);
@@ -174,12 +182,10 @@ Trace Model::simulate(RNGType& rng, Parameters& parameters, bool prepare_for_gra
         latent_choices_t latent_gradient;
         logpdf_grad(latent_gradient, latents);
         // note: this copies the model
-        Trace trace {*this, log_density, std::move(latents), std::move(latent_gradient)};
-        return trace;
+        return std::unique_ptr<Trace>(new Trace(*this, log_density, std::move(latents), std::move(latent_gradient)));
     } else {
         // note: this copies the model
-        Trace trace {*this, log_density, std::move(latents)};
-        return trace;
+        return std::unique_ptr<Trace>(new Trace(*this, log_density, std::move(latents)));
     }
 }
 
@@ -195,21 +201,19 @@ void Model::simulate(Trace& trace, RNGType& rng, Parameters& parameters, bool pr
 }
 
 template <typename RNGType>
-std::pair<Trace,double> Model::generate(const EmptyChoiceBuffer& constraints, RNGType& rng, Parameters& parameters,
-                                        bool prepare_for_gradient) const {
+std::pair<std::unique_ptr<Trace>,double> Model::generate(const EmptyChoiceBuffer& constraints, RNGType& rng,
+                                                         Parameters& parameters, bool prepare_for_gradient) const {
     latent_choices_t latents;
     auto [log_density, log_weight] = importance_sample(latents, rng);
+    std::unique_ptr<Trace> trace = nullptr;
     if (prepare_for_gradient) {
         latent_choices_t latent_gradient;
         logpdf_grad(latent_gradient, latents);
-        // note: this copies the model
-        Trace trace {*this, log_density, std::move(latents), std::move(latent_gradient)};
-        return {trace, log_weight};
+        trace = std::unique_ptr<Trace>(new Trace(*this, log_density, std::move(latents), std::move(latent_gradient)));
     } else {
-        // note: this copies the model
-        Trace trace {*this, log_density, std::move(latents)};
-        return {trace, log_weight};
+        trace = std::unique_ptr<Trace>(new Trace(*this, log_density, std::move(latents)));
     }
+    return {std::move(trace), log_weight};
 }
 
 template <typename RNGType>
@@ -377,13 +381,13 @@ int main(int argc, char* argv[]) {
     auto [trace, log_weight] = model.generate(EmptyChoiceBuffer{}, rng, unused, true);
     LatentsSelection hmc_selection;
     LatentsSelection mala_selection;
-    Trace proposal_trace = make_proposal(trace).simulate(rng, unused, false);
+    auto proposal_trace = make_proposal(*trace).simulate(rng, unused, false);
 
     // TODO: We can actually reuse the buffers between HMC and MALA
-    latent_choices_t hmc_momenta_buffer {trace.choices(hmc_selection)}; // copy constructor
-    latent_choices_t hmc_values_buffer {trace.choices(hmc_selection)}; // copy constructor
-    latent_choices_t mala_buffer_1 {trace.choices(mala_selection)}; // copy constructor
-    latent_choices_t mala_buffer_2 {trace.choices(mala_selection)}; // copy constructor
+    latent_choices_t hmc_momenta_buffer {trace->choices(hmc_selection)}; // copy constructor
+    latent_choices_t hmc_values_buffer {trace->choices(hmc_selection)}; // copy constructor
+    latent_choices_t mala_buffer_1 {trace->choices(mala_selection)}; // copy constructor
+    latent_choices_t mala_buffer_2 {trace->choices(mala_selection)}; // copy constructor
 
     // do some MALA and HMC on the latent variables (without allocating any memory inside the loop)
     std::vector<mean_t> history(num_iters);
@@ -391,19 +395,19 @@ int main(int argc, char* argv[]) {
     size_t mala_num_accepted = 0;
     size_t mh_num_accepted = 0;
     for (size_t iter = 0; iter < num_iters; iter++) {
-        history[iter] = trace.choices(LatentsSelection{}).matrix();
+        history[iter] = trace->choices(LatentsSelection{}).matrix();
         for (size_t cycle = 0; cycle < hmc_cycles_per_iter; cycle++) {
             hmc_num_accepted += gen::still::mcmc::hmc(
-                    trace, hmc_selection, hmc_leapfrog_steps, hmc_eps,
+                    *trace, hmc_selection, hmc_leapfrog_steps, hmc_eps,
                     hmc_momenta_buffer, hmc_values_buffer, rng);
         }
         for (size_t cycle = 0; cycle < mala_cycles_per_iter; cycle++) {
             mala_num_accepted += gen::still::mcmc::mala(
-                    trace, mala_selection, mala_tau, mala_buffer_1, mala_buffer_2, rng);
+                    *trace, mala_selection, mala_tau, mala_buffer_1, mala_buffer_2, rng);
         }
         for (size_t cycle = 0; cycle < mh_cycles_per_iter; cycle++) {
             mh_num_accepted += gen::still::mcmc::mh(
-                    trace, make_proposal, unused, rng, proposal_trace, true);
+                    *trace, make_proposal, unused, rng, *proposal_trace, true);
         }
     }
 
