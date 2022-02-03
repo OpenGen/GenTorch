@@ -39,6 +39,7 @@ namespace gen::still::smc {
         std::vector<double> two_times_log_normalized_weights_;
         std::vector<double> normalized_weights_;
         std::vector<size_t> parents_;
+        std::vector<Trace*> trace_nonowning_ptrs_;
         RNGType& rng_; // TODO this will need to be replaced with a seed_seq for the multi-threaded version.
 
         double normalize_weights() {
@@ -59,21 +60,27 @@ namespace gen::still::smc {
         }
 
     public:
-        template <typename Model, typename Parameters, typename Constraints>
-        ParticleSystem(const Model& model, Parameters& parameters, const Constraints& constraints,
-                       size_t num_particles, RNGType& rng) :
+        ParticleSystem(size_t num_particles, RNGType& rng) :
                 num_particles_(num_particles),
-                traces_(num_particles), traces_tmp_(num_particles),
-                normalized_weights_(num_particles),
+                traces_(num_particles),
+                traces_tmp_(num_particles),
+                log_weights_(num_particles),
                 log_normalized_weights_(num_particles),
                 two_times_log_normalized_weights_(num_particles),
+                normalized_weights_(num_particles),
                 parents_(num_particles),
+                trace_nonowning_ptrs_(num_particles),
                 rng_(rng) {
+        }
+
+        template <typename Model, typename Parameters, typename Constraints>
+        void init_step(const Model& model, Parameters& parameters, const Constraints& constraints) {
             // TODO make prepare_for_gradient optional for each generate() and update() call
-            for (size_t i = 0; i < num_particles; i++) {
-                auto [trace_ptr, log_weight] = model.generate(constraints, rng, parameters, false);
+            for (size_t i = 0; i < num_particles_; i++) {
+                auto [trace_ptr, log_weight] = model.generate(constraints, rng_, parameters, false);
                 traces_[i] = std::move(trace_ptr);
-                log_weights_.emplace_back(log_weight);
+                trace_nonowning_ptrs_[i] = traces_[i].get();
+                log_weights_[i] = log_weight;
             }
         }
 
@@ -110,14 +117,15 @@ namespace gen::still::smc {
             }
             for (size_t i = 0; i < num_particles_; i++) {
                 traces_[i] = std::move(traces_tmp_[i]); // move assignment
+                trace_nonowning_ptrs_[i] = traces_[i].get();
             }
             std::fill(log_weights_.begin(), log_weights_.end(), 0.0);
             return log_total_weight;
         }
 
         // so that user can run rejuvenation moves on them
-        const std::vector<std::unique_ptr<Trace>>& traces() const {
-            return traces_;
+        const std::vector<Trace*>& traces() const {
+            return trace_nonowning_ptrs_;
         }
 
     };
