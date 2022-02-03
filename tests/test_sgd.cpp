@@ -23,7 +23,7 @@ See the License for the specific language governing permissions and
 #include <gen/dml.h>
 #include <gen/parameters.h>
 #include <gen/distributions/normal.h>
-#include <gen/sgd.h>
+#include <gen/still/sgd.h>
 #include <gen/utils/randutils.h>
 #include <gen/conversions.h> // TODO we may need to rename this to 'types'
 

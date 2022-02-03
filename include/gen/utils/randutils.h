@@ -108,6 +108,7 @@
 #include <chrono>
 #include <thread>
 #include <algorithm>
+#include <cassert>
 
 // Ugly platform-specific code for auto_seeded
 
