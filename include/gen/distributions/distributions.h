@@ -86,14 +86,14 @@ public:
     }
 
     template<class RNGType>
-    trace_type simulate(RNGType &rng, const EmptyModule& parameters,
+    std::unique_ptr<trace_type> simulate(RNGType &rng, const EmptyModule& parameters,
                          bool prepare_for_gradients=false) const {
         return_type value = dist_.sample(rng);
-        return {std::move(value), dist_};
+        return std::make_unique<trace_type>(std::move(value), dist_);
     }
 
     template<class RNGType>
-    std::pair<trace_type, double>
+    std::pair<std::unique_ptr<trace_type>, double>
     generate(RNGType &rng, const EmptyModule& parameters, const ChoiceTrie& constraints,
              bool prepare_for_gradients=false) const {
         return_type value;
@@ -107,7 +107,7 @@ public:
         } else {
             throw std::domain_error("expected primitive or empty choice dict");
         }
-        return {trace_type(std::move(value), dist_), log_weight};
+        return {std::make_unique<trace_type>(std::move(value), dist_), log_weight};
     }
 
 

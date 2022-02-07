@@ -5,3 +5,6 @@
 	path = third_party/pybind11
 	url = ../../pybind/pybind11
 	branch = stable
+[submodule "third_party/tillcpp"]
+	path = third_party/tillcpp
+	url = ../tillcpp
