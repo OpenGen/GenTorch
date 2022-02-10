@@ -21,12 +21,19 @@ See the License for the specific language governing permissions and
 #include <gen/trace.h>
 #include <gen/parameters.h>
 
+#include <gentl/concepts.h>
+#include <gentl/types.h>
+
+#include <torch/torch.h>
+#include <torch/csrc/autograd/functions/utils.h>
+
 #include <any>
 #include <memory>
 #include <optional>
 
-#include <torch/torch.h>
-#include <torch/csrc/autograd/functions/utils.h>
+using gentl::SimulateOptions;
+using gentl::GenerateOptions;
+using gentl::UpdateOptions;
 
 using std::any, std::any_cast;
 using std::vector, std::pair;
@@ -75,8 +82,8 @@ struct MyGradNode : public Node {
         // check that we read off all but the last element, which is the dummy element
         assert(num_read == output_grad.size() - 1);
 
-        auto args_grad = any_cast<args_type>(subtrace_.gradients(
-                return_value_grad, *helper_.scaler_ptr_, *helper_.accumulator_ptr_));
+        args_type args_grad = subtrace_.parameter_gradient(
+                *helper_.accumulator_ptr_, return_value_grad, *helper_.scaler_ptr_);
         std::vector<Tensor> input_grad = unroll(args_grad);
         input_grad.emplace_back(torch::tensor(0.0));
         return input_grad;
@@ -111,7 +118,6 @@ private:
     subtrace_type& subtrace_;
     const GradientHelper& helper_;
 };
-
 
 // *************
 // * DML Trace *
@@ -197,7 +203,7 @@ public:
 
     ~DMLTrace() override = default;
 
-    [[nodiscard]] double get_score() const override { return score_; }
+    [[nodiscard]] double get_score() const { return score_; }
 
     [[nodiscard]] const return_type& get_return_value() const {
         if (!maybe_value_.has_value()) {
@@ -223,10 +229,6 @@ public:
         return subtraces_->get_subtrie(address).has_value();
     }
 
-    [[nodiscard]] const Trace& get_subtrace(const Address &address) const {
-        return *subtraces_->get_value(address);
-    }
-
     static ChoiceTrie get_choice_trie(const Trie<unique_ptr<Trace>> &subtraces) {
         c10::InferenceMode guard {true};
         ChoiceTrie trie{};
@@ -244,13 +246,15 @@ public:
 
     void set_value(return_type value) { maybe_value_ = value; }
 
-    [[nodiscard]] ChoiceTrie get_choice_trie() const override { return get_choice_trie(*subtraces_); }
+    [[nodiscard]] ChoiceTrie get_choice_trie() const override {
+        return get_choice_trie(*subtraces_);
+    }
 
     const args_type &get_args() const { return args_.first; }
 
     // TODO: change retval_grad to use retval_type, and similarly for gradients_args
 
-    any gradients(any retval_grad_any, double scaler, GradientAccumulator& accumulator) override {
+    args_type parameter_gradient(GradientAccumulator& accumulator, return_type retval_grad, double scaler) {
 
         // the computation graph is already set up, there should be no Tensors created anyways
         c10::InferenceMode guard {true};
@@ -274,7 +278,6 @@ public:
 
         // add the return value to the outputs
         const return_type& retval = get_return_value();
-        return_type retval_grad = std::any_cast<return_type>(retval_grad_any);
         vector<Tensor> outputs = unroll(retval);
         vector<Tensor> output_grads = unroll(retval_grad);
 
@@ -283,12 +286,12 @@ public:
         outputs.emplace_back(dummy_output_);
         output_grads.emplace_back(torch::tensor(1.0));
 
-        // pass information back to the calls to gradients() that happen within the backward pass will have
+        // pass information back to the calls to parameter_gradient() that happen within the backward pass will have
         // NOTE: not thread safe, but this is okay, traces aren't intended to be thread safe
         helper_->scaler_ptr_ = &scaler;
         helper_->accumulator_ptr_ = &accumulator;
 
-        // do the backward pass. this recursively invokes gradients() for each subtrace
+        // do the backward pass. this recursively invokes parameter_gradient() for each subtrace
         // NOTE: the returned input grads do not include parameters for callee generative functions
         // TODO check why we are setting allow_unused to true
         vector<Tensor> input_grads = torch::autograd::grad(outputs, inputs, output_grads, {}, false, true);
@@ -311,7 +314,11 @@ public:
         // the last element should be the dummy
         assert(i == input_grads.size() - 1);
 
-        return args_grad;
+        return std::move(args_grad);
+    }
+
+    args_type parameter_gradient(GradientAccumulator& accumulator, double scaler) {
+        return parameter_gradient(accumulator, zero_gradient(get_return_value()), scaler);
     }
 
     template <typename args_type, typename return_type, typename subtrace_type>
@@ -334,6 +341,7 @@ public:
 private:
     pair<const args_type&, std::unique_ptr<const args_type>> args_;
     std::unique_ptr<Trie<std::unique_ptr<Trace>>> subtraces_;
+    ChoiceTrie choices_;
     double score_;
     optional<return_type> maybe_value_;
     bool prepared_for_gradients_;
@@ -345,7 +353,79 @@ private:
 };
 
 
+// *****************
+// * Update tracer *
+// *****************
 
+
+template<typename Generator, typename Model>
+class DMLUpdateTracer {
+public:
+    typedef typename Model::args_type args_type;
+    typedef typename Model::parameters_type parameters_type;
+    using trace_type = DMLTrace<Model>;
+
+    explicit DMLUpdateTracer(Generator &gen, const args_type &args, parameters_type& parameters,
+                             const ChoiceTrie &constraints, const Trace* prev_trace,
+                             bool prepare_for_gradients, bool assert_retval_grad) :
+            finished_(false),
+            gen_{gen},
+            trace_{std::make_unique<trace_type>(args, prepare_for_gradients, assert_retval_grad, parameters)},
+            log_weight_(0.0),
+            constraints_(constraints),
+            prepare_for_gradients_{prepare_for_gradients},
+            parameters_{parameters} {
+        assert(!(prepare_for_gradients && c10::InferenceMode::is_enabled()));
+    }
+
+    const args_type &get_args() const { return trace_->get_args(); }
+
+    template<typename CalleeType, typename CalleeParametersType>
+    typename CalleeType::return_type
+    call(Address &&address, CalleeType &&gen_fn_with_args, CalleeParametersType& parameters) {
+        typedef typename CalleeType::args_type callee_args_type;
+        typedef typename CalleeType::trace_type callee_trace_type;
+        typedef typename CalleeType::return_type callee_return_type;
+        assert(!finished_); // if this assertion fails, it is a bug in DML not user code
+        ChoiceTrie sub_constraints{constraints_.get_subtrie(address, false)};
+        auto [subtrace_ptr, log_weight_increment] = gen_fn_with_args.generate(
+                gen_, parameters, sub_constraints, GenerateOptions().precompute_gradient(prepare_for_gradients_));
+        callee_trace_type& subtrace = trace_->add_subtrace(address, std::move(subtrace_ptr));
+        log_weight_ += log_weight_increment;
+        const callee_return_type& value = subtrace.get_return_value();
+        if (prepare_for_gradients_) {
+            return trace_->make_tracked_return_value(subtrace, gen_fn_with_args.get_args(), value);
+        } else {
+            return value; // copy
+        }
+    }
+
+    template<typename CalleeType>
+    typename CalleeType::return_type
+    call(Address&& address, CalleeType&& gen_fn_with_args) {
+        return call(std::move(address), std::forward<CalleeType>(gen_fn_with_args), gen::empty_module_singleton);
+    }
+
+    std::pair<std::unique_ptr<DMLTrace<Model>>, double> finish(typename Model::return_type value) {
+        assert(!(prepare_for_gradients_ && c10::InferenceMode::is_enabled()));
+        finished_ = true;
+        trace_->set_value(value);
+        return std::pair(std::move(trace_), log_weight_); // TODO trace_
+    }
+
+    parameters_type& get_parameters() { return parameters_; }
+
+    bool prepare_for_gradients() const { return prepare_for_gradients_; }
+
+private:
+    double log_weight_;
+    bool finished_;
+    Generator &gen_;
+    std::unique_ptr<DMLTrace<Model>> trace_;
+    const ChoiceTrie &constraints_;
+    bool prepare_for_gradients_;
+    parameters_type& parameters_;
+};
 
 
 // *******************
@@ -380,7 +460,9 @@ public:
         typedef typename CalleeType::return_type callee_return_type;
         assert(!finished_); // if this assertion fails, it is a bug in DML not user code
         callee_trace_type& subtrace = trace_->add_subtrace(address,
-                                              gen_fn_with_args.simulate(gen_, parameters, prepare_for_gradients_));
+                                              gen_fn_with_args.simulate(
+                                                      gen_, parameters,
+                                                      SimulateOptions().precompute_gradient(prepare_for_gradients_)));
         const auto& value = subtrace.get_return_value();
         if (prepare_for_gradients_) {
             return trace_->make_tracked_return_value(subtrace, gen_fn_with_args.get_args(), value);
@@ -392,7 +474,7 @@ public:
     template<typename CalleeType>
     typename CalleeType::return_type
     call(Address&& address, CalleeType&& gen_fn_with_args) {
-        return call(std::move(address), std::move(gen_fn_with_args), gen::empty_module_singleton);
+        return call(std::move(address), std::forward<CalleeType>(gen_fn_with_args), gen::empty_module_singleton);
     }
 
     std::unique_ptr<DMLTrace<Model>> finish(typename Model::return_type value) {
@@ -448,7 +530,8 @@ public:
         typedef typename CalleeType::return_type callee_return_type;
         assert(!finished_); // if this assertion fails, it is a bug in DML not user code
         ChoiceTrie sub_constraints{constraints_.get_subtrie(address, false)};
-        auto [subtrace_ptr, log_weight_increment] = gen_fn_with_args.generate(gen_, parameters, sub_constraints, prepare_for_gradients_);
+        auto [subtrace_ptr, log_weight_increment] = gen_fn_with_args.generate(
+                gen_, parameters, sub_constraints, GenerateOptions().precompute_gradient(prepare_for_gradients_));
         callee_trace_type& subtrace = trace_->add_subtrace(address, std::move(subtrace_ptr));
         log_weight_ += log_weight_increment;
         const callee_return_type& value = subtrace.get_return_value();
@@ -462,7 +545,7 @@ public:
     template<typename CalleeType>
     typename CalleeType::return_type
     call(Address&& address, CalleeType&& gen_fn_with_args) {
-        return call(std::move(address), std::move(gen_fn_with_args), gen::empty_module_singleton);
+        return call(std::move(address), std::forward<CalleeType>(gen_fn_with_args), gen::empty_module_singleton);
     }
 
     std::pair<std::unique_ptr<DMLTrace<Model>>, double> finish(typename Model::return_type value) {
@@ -532,23 +615,23 @@ public:
         return args_;
     }
 
-    template<typename Generator>
-    std::unique_ptr<DMLTrace<Model>> simulate(Generator &gen, parameters_type& parameters, bool prepare_for_gradients) {
+    template<typename RNG>
+    std::unique_ptr<DMLTrace<Model>> simulate(RNG& gen, parameters_type& parameters, const SimulateOptions& options) {
         c10::InferenceMode guard{
-                !prepare_for_gradients}; // inference mode is on if we are not preparing for gradients
-        auto tracer = DMLSimulateTracer<Generator, Model>{gen, args_, parameters, prepare_for_gradients,
+                !options.precompute_gradient()}; // inference mode is on if we are not preparing for gradients
+        auto tracer = DMLSimulateTracer<RNG, Model>{gen, args_, parameters, options.precompute_gradient(),
                                                           assert_retval_grad_};
         auto value = static_cast<Model*>(this)->forward(tracer);
         return tracer.finish(value);
     }
 
-    template<typename Generator>
+    template<typename RNG>
     std::pair<std::unique_ptr<DMLTrace<Model>>, double> generate(
-            Generator &gen, parameters_type& parameters,
-            const ChoiceTrie &constraints, bool prepare_for_gradients) {
+            RNG& gen, parameters_type& parameters,
+            const ChoiceTrie &constraints, const GenerateOptions& options) {
         c10::InferenceMode guard{
-                !prepare_for_gradients}; // inference mode is on if we are not preparing for gradients
-        auto tracer = DMLGenerateTracer<Generator, Model>{gen, args_, parameters, constraints, prepare_for_gradients,
+                !options.precompute_gradient()}; // inference mode is on if we are not preparing for gradients
+        auto tracer = DMLGenerateTracer<RNG, Model>{gen, args_, parameters, constraints, options.precompute_gradient(),
                                                           assert_retval_grad_};
         auto value = static_cast<Model*>(this)->forward(tracer);
         return tracer.finish(value);

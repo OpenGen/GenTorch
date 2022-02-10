@@ -77,7 +77,7 @@ namespace gen::sgd {
                 auto [trace, log_weight] = model.generate(rng, parameters, constraints, true);
                 const auto& retval = trace->get_return_value();
                 const auto retval_grad = zero_gradient(retval);
-                trace->gradients(retval_grad, scaler, accum);
+                trace->parameter_gradient(retval_grad, scaler, accum);
             }
             accum.update_module_gradients();
             done = callback(minibatch);
@@ -150,7 +150,7 @@ namespace gen::sgd {
                     auto [trace, log_weight] = model.generate(rng, parameters, constraints, true);
                     const auto& retval = trace->get_return_value();
                     const auto retval_grad = zero_gradient(retval);
-                    trace->gradients(retval_grad, scaler, accum);
+                    trace->parameter_gradient(retval_grad, scaler, accum);
                 }
                 sync_point.arrive_and_wait();
             }

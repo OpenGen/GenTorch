@@ -18,6 +18,8 @@ See the License for the specific language governing permissions and
 #include <gen/dml.h>
 #include <gen/distributions/normal.h>
 
+#include <gentl/types.h>
+
 #include <cassert>
 #include <iostream>
 #include <memory>
@@ -27,11 +29,17 @@ See the License for the specific language governing permissions and
 using torch::Tensor;
 using torch::TensorOptions;
 using torch::tensor;
+
 using gen::dml::DMLGenFn;
 using gen::distributions::normal::Normal;
 using gen::distributions::normal::NormalDist;
 using gen::ChoiceTrie;
 using gen::EmptyModule;
+
+using gentl::SimulateOptions;
+using gentl::GenerateOptions;
+using gentl::UpdateOptions;
+
 
 bool tensor_scalar_bool(Tensor a) {
     if (a.ndimension() != 0) {
@@ -39,6 +47,10 @@ bool tensor_scalar_bool(Tensor a) {
     }
     return *(a.data_ptr<bool>());
 }
+
+enum FooAddrs {
+    z1, z2
+};
 
 class Foo : public DMLGenFn<Foo, std::pair<Tensor,int>, Tensor, EmptyModule> {
 public:
@@ -68,7 +80,7 @@ TEST_CASE("simulate", "[dml]") {
     Foo model {tensor(1.0), 0};
     std::random_device rd{};
     std::mt19937 gen{rd()};
-    auto trace = model.simulate(gen, parameters, true);
+    auto trace = model.simulate(gen, parameters, SimulateOptions().precompute_gradient(true));
     ChoiceTrie choices = trace->get_choice_trie();
     REQUIRE(choices.get_subtrie({"z1"}).has_value());
     REQUIRE(choices.get_subtrie({"z2"}).has_value());
@@ -84,7 +96,7 @@ TEST_CASE("generate", "[dml]") {
     constraints.set_value({"z2"}, tensor(2.0));
     constraints.set_value({"recursive", "z1"}, tensor(1.0));
     constraints.set_value({"recursive", "z2"}, tensor(3.0));
-    auto [trace, log_weight] = model.generate(gen, parameters, constraints, true);
+    auto [trace, log_weight] = model.generate(gen, parameters, constraints, GenerateOptions().precompute_gradient(true));
     ChoiceTrie choices = trace->get_choice_trie();
     REQUIRE(any_cast<Tensor>(choices.get_value({"z1"})).equal(tensor(-1.0)));
     REQUIRE(any_cast<Tensor>(choices.get_value({"z2"})).equal(tensor(2.0)));
@@ -99,7 +111,7 @@ void do_simulate(int idx, int n, std::vector<double>& scores, EmptyModule& param
     for (int j = 0; j < n; j++) {
         Tensor z = tensor(1.0, TensorOptions().dtype(torch::kFloat64));
         auto model = Foo(z, 0);
-        auto trace = model.simulate(gen, parameters, false);
+        auto trace = model.simulate(gen, parameters, SimulateOptions());
         score += trace->get_score();
     }
     scores[idx] = score;
@@ -112,7 +124,7 @@ void do_generate(int idx, int n, std::vector<double>& scores, const ChoiceTrie& 
     for (int j = 0; j < n; j++) {
         Tensor z = tensor(1.0, TensorOptions().dtype(torch::kFloat64));
         auto model = Foo(z, 0);
-        auto [trace, log_weight] = model.generate(gen, parameters, constraints, false);
+        auto [trace, log_weight] = model.generate(gen, parameters, constraints, GenerateOptions());
         total_log_weight += log_weight;
     }
     scores[idx] = total_log_weight;
@@ -191,8 +203,8 @@ TEST_CASE("gradients with no parameters", "[gradients, dml]") {
     auto model = GradientsTestGenFn(x, y);
     ChoiceTrie constraints {};
     constraints.set_value({"z1"}, z1);
-    auto [trace, log_weight] = model.generate(gen, parameters, constraints, true);
-    auto arg_grads = any_cast<std::pair<Tensor,Tensor>>(trace->gradients(retval_grad, 1.0, accum));
+    auto [trace, log_weight] = model.generate(gen, parameters, constraints, GenerateOptions().precompute_gradient(true));
+    auto arg_grads = any_cast<std::pair<Tensor,Tensor>>(trace->parameter_gradient(accum, retval_grad, 1.0));
     NormalDist dist {x + y, tensor(1.0)};
     auto logpdf_grad = dist.log_density_gradient(z1);
     Tensor expected_x_grad = 1.123 + std::get<1>(logpdf_grad);
@@ -271,8 +283,8 @@ TEST_CASE("parameter gradients and generative function calls", "[dml]") {
     std::mt19937 rng{rd()};
     ChoiceTrie constraints;
     constraints.set_value({"callee_addr", "z1"}, z1);
-    auto [trace, log_weight] = model.generate(rng, parameters, constraints, true);
-    auto arg_grads = trace->gradients(retval_grad, scaler, accum);
+    auto [trace, log_weight] = model.generate(rng, parameters, constraints, GenerateOptions().precompute_gradient(true));
+    auto arg_grads = trace->parameter_gradient(accum, retval_grad, scaler);
     accum.update_module_gradients();
 
     REQUIRE(parameters.callee_params->theta1.grad().allclose(expected_theta1_grad));
@@ -323,8 +335,8 @@ TEST_CASE("parameter gradients and torch modules", "[dml]") {
     gen::tests::dml::ParametersTestTorchCaller model {x};
     std::random_device rd{};
     std::mt19937 rng{rd()};
-    auto trace = model.simulate(rng, parameters, true);
-    auto arg_grads = trace->gradients(retval_grad, scaler, accum);
+    auto trace = model.simulate(rng, parameters, SimulateOptions().precompute_gradient(true));
+    auto arg_grads = trace->parameter_gradient(accum, retval_grad, scaler);
     accum.update_module_gradients();
 
     REQUIRE(parameters.linear->bias.grad().allclose(expected_bias_grad));
@@ -340,8 +352,8 @@ void simulate_and_gradients(int n, gen::tests::dml::ParametersTestCallerModule& 
     Tensor x = tensor(1.0);
     gen::tests::dml::ParametersTestCaller model {x};
     for (int i = 0; i < n; i++) {
-        auto trace = model.simulate(rng, parameters, true);
-        trace->gradients(tensor(1.0), 1.0, accum);
+        auto trace = model.simulate(rng, parameters, SimulateOptions().precompute_gradient(true));
+        trace->parameter_gradient(accum, tensor(1.0), 1.0);
     }
 }
 
