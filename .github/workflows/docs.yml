@@ -35,7 +35,10 @@ jobs:
     - name: Configure CMake
       env:
         CXX: g++-11
-      run: cmake -S ${{github.workspace}} -B ${{github.workspace}}/build -DCMAKE_PREFIX_PATH=${{github.workspace}}/libtorch/
+      run: |
+        ls ${{github.workspace}}
+        ls ${{github.workspace}}/libtorch/
+        cmake -S ${{github.workspace}} -B ${{github.workspace}}/build -DCMAKE_PREFIX_PATH=${{github.workspace}}/libtorch/
       
     - name: Build GenTorch HTML documentation using Doxygen
       run: |
