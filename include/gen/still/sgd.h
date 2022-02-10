@@ -52,8 +52,8 @@ namespace gen::sgd {
         double total = 0.0;
         for (const auto& datum : data) {
             auto [model, constraints] = unpack_datum(datum);
-            auto trace_and_log_weight = model.generate(rng, parameters, constraints, false);
-            total += trace_and_log_weight.second;
+            auto [trace, log_weight] = model.generate(rng, parameters, constraints, false);
+            total += log_weight;
         }
         return total / static_cast<double>(data.size());
     }
@@ -74,10 +74,10 @@ namespace gen::sgd {
             std::vector<size_t> minibatch = generate_minibatch(rng, data.size(), minibatch_size);
             for (size_t i = 0; i < minibatch_size; i++) {
                 auto [model, constraints] = unpack_datum(data[minibatch[i]]);
-                auto trace_and_log_weight = model.generate(rng, parameters, constraints, true);
-                const auto& retval = trace_and_log_weight.first.get_return_value();
+                auto [trace, log_weight] = model.generate(rng, parameters, constraints, true);
+                const auto& retval = trace->get_return_value();
                 const auto retval_grad = zero_gradient(retval);
-                trace_and_log_weight.first.gradients(retval_grad, scaler, accum);
+                trace->parameter_gradient(retval_grad, scaler, accum);
             }
             accum.update_module_gradients();
             done = callback(minibatch);
@@ -147,10 +147,10 @@ namespace gen::sgd {
             while (!done) {
                 for (size_t i = start; i < stop; i++) {
                     auto [model, constraints] = unpack_datum(data[minibatch[i]]);
-                    auto trace_and_log_weight = model.generate(rng, parameters, constraints, true);
-                    const auto& retval = trace_and_log_weight.first.get_return_value();
+                    auto [trace, log_weight] = model.generate(rng, parameters, constraints, true);
+                    const auto& retval = trace->get_return_value();
                     const auto retval_grad = zero_gradient(retval);
-                    trace_and_log_weight.first.gradients(retval_grad, scaler, accum);
+                    trace->parameter_gradient(retval_grad, scaler, accum);
                 }
                 sync_point.arrive_and_wait();
             }

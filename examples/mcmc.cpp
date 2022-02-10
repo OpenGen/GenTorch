@@ -383,7 +383,6 @@ int main(int argc, char* argv[]) {
     LatentsSelection mala_selection;
     auto proposal_trace = make_proposal(*trace).simulate(rng, unused, false);
 
-    // TODO: We can actually reuse the buffers between HMC and MALA
     latent_choices_t hmc_momenta_buffer {trace->choices(hmc_selection)}; // copy constructor
     latent_choices_t hmc_values_buffer {trace->choices(hmc_selection)}; // copy constructor
     latent_choices_t mala_buffer_1 {trace->choices(mala_selection)}; // copy constructor

@@ -35,19 +35,19 @@ namespace gen {
         /**
          * @return the choice trie.
          */
-        [[nodiscard]] virtual ChoiceTrie get_choice_trie() const = 0;
+        [[nodiscard]] virtual ChoiceTrie choices() const = 0;
 
-        /**
-         * @return the log joint density.
-         */
-        [[nodiscard]] virtual double get_score() const = 0;
+//        /**
+//         * @return the log joint density.
+//         */
+//        [[nodiscard]] virtual double get_score() const = 0;
 
 //        /**
 //         * @return the return value of the generative function.
 //         */
 //        [[nodiscard]] virtual const std::any* get_return_value() const = 0;
 
-        virtual std::any gradients(std::any retval_grad, double scaler, GradientAccumulator& accumulator) = 0;
+//        virtual std::any gradients(std::any retval_grad, double scaler, GradientAccumulator& accumulator) = 0;
 
     // TODO - use new update / swap / fork interface
 

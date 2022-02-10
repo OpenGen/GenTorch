@@ -22,7 +22,7 @@ add_library(gen_library
         distributions/uniform_continuous.cpp
         ${HEADER_LIST})
 
-target_include_directories(gen_library PUBLIC ../include)
+target_include_directories(gen_library PUBLIC ../include ../third_party/gentl/include/)
 target_link_libraries(gen_library ${TORCH_LIBRARIES})
 
 # All users of this library will need at least C++17

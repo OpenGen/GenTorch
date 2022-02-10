@@ -19,7 +19,7 @@ add_executable(testlib
 # I'm using C++17 in the test
 target_compile_features(testlib PRIVATE cxx_std_17)
 
-#target_include_directories(testlib PRIVATE ../include)
+target_include_directories(testlib PRIVATE ../third_party/gentl/include/)
 
 # Should be linked to the main library, as well as the Catch2 testing library
 target_link_libraries(testlib PRIVATE gen_library Catch2::Catch2)

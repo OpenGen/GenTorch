@@ -23,14 +23,15 @@ See the License for the specific language governing permissions and
 #include <gen/dml.h>
 #include <gen/parameters.h>
 #include <gen/distributions/normal.h>
-#include <gen/still/sgd.h>
 #include <gen/utils/randutils.h>
 #include <gen/conversions.h> // TODO we may need to rename this to 'types'
 
+#include <gentl/learning/supervised.h>
 
 using randutils::seed_seq_fe128;
 using torch::Tensor, torch::tensor;
 using std::vector;
+
 using gen::dml::DMLGenFn;
 using gen::EmptyModule;
 using gen::distributions::normal::Normal;
@@ -117,12 +118,12 @@ TEST_CASE("multi-threaded matches single-threaded", "[sgd]") {
 
     std::mt19937 rng(minibatch_seed);
     callback_was_called = false;
-    gen::sgd::train_supervised_single_threaded(parameters1, callback_single, data, unpack_datum, minibatch_size, rng);
+    gentl::sgd::train_supervised_single_threaded(parameters1, callback_single, data, unpack_datum, minibatch_size, rng);
     REQUIRE(callback_was_called);
 
     size_t num_threads = 3;
     callback_was_called = false;
-    gen::sgd::train_supervised(parameters2, callback_multi, data, unpack_datum, minibatch_size, num_threads, minibatch_seed);
+    gentl::sgd::train_supervised(parameters2, callback_multi, data, unpack_datum, minibatch_size, num_threads, minibatch_seed);
     REQUIRE(callback_was_called);
 
     // check that gradients are nonzero
@@ -207,7 +208,7 @@ TEST_CASE("simple optimization problem", "[sgd]") {
     size_t minibatch_size = 64;
 
     auto evaluate = [&data,&unpack_datum,&rng](size_t iter, SimpleOptimizationModelModule& parameters) -> double {
-        double objective = gen::sgd::estimate_objective(rng, parameters, data, unpack_datum);
+        double objective = gentl::sgd::estimate_objective(rng, parameters, data, unpack_datum);
         return objective;
     };
 
@@ -228,7 +229,7 @@ TEST_CASE("simple optimization problem", "[sgd]") {
             return (iter++) == num_iters - 1;
         };
         evaluate(iter++, parameters);
-        gen::sgd::train_supervised_single_threaded(parameters, callback, data, unpack_datum, minibatch_size, rng);
+        gentl::sgd::train_supervised_single_threaded(parameters, callback, data, unpack_datum, minibatch_size, rng);
         REQUIRE(parameters.mean.allclose(tensor(opt_mean), 0.05, 0.05));
         REQUIRE(std::abs(objective - expected_objective_optimum) < 0.01);
     }
@@ -251,7 +252,7 @@ TEST_CASE("simple optimization problem", "[sgd]") {
             return (iter++) == num_iters - 1;
         };
         evaluate(iter++, parameters);
-        gen::sgd::train_supervised(parameters, callback, data, unpack_datum, minibatch_size, num_threads, seed_seq);
+        gentl::sgd::train_supervised(parameters, callback, data, unpack_datum, minibatch_size, num_threads, seed_seq);
         REQUIRE(parameters.mean.allclose(tensor(opt_mean), 0.05, 0.05));
         REQUIRE(std::abs(objective - expected_objective_optimum) < 0.01);
     }

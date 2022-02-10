@@ -16,10 +16,16 @@ See the License for the specific language governing permissions and
 #pragma once
 
 #include <gen/trace.h>
-
 #include <random>
 
 #include <torch/torch.h>
+
+#include <gentl/concepts.h>
+#include <gentl/types.h>
+
+using gentl::SimulateOptions;
+using gentl::GenerateOptions;
+using gentl::UpdateOptions;
 
 namespace gen::distributions {
 
@@ -36,21 +42,31 @@ public:
         return value_;
     }
 
-    // TODO make gradients not use std::any
-    [[nodiscard]] std::any gradients(std::any ret_grad, double scaler, GradientAccumulator& accumulator) override {
+    [[nodiscard]] args_type parameter_gradient(
+            GradientAccumulator& accumulator, const return_type&, double scaler) {
+        return parameter_gradient(accumulator, scaler);
+    }
+
+    [[nodiscard]] args_type parameter_gradient(GradientAccumulator& accumulator, double scaler) {
         auto grads = dist_.log_density_gradient(value_);
         return GenFnType::extract_argument_gradient(grads);
     }
 
-    [[nodiscard]] double get_score() const override {
+    [[nodiscard]] double get_score() const {
         return score_;
     }
 
-    [[nodiscard]] ChoiceTrie get_choice_trie() const override {
+    [[nodiscard]] ChoiceTrie choices() const override {
         ChoiceTrie trie{};
         trie.set_value(value_);
         return trie; // copy elision
     }
+
+//    std::tuple<double,const ChoiceTrie&,
+    // TODO update
+    // TODO it requires a retdiff type..
+    // (we could add that later.)
+
 
 private:
     const return_type value_;
@@ -86,16 +102,16 @@ public:
     }
 
     template<class RNGType>
-    trace_type simulate(RNGType &rng, const EmptyModule& parameters,
-                         bool prepare_for_gradients=false) const {
+    std::unique_ptr<trace_type> simulate(RNGType &rng, const EmptyModule& parameters,
+                                         const SimulateOptions&) const {
         return_type value = dist_.sample(rng);
-        return {std::move(value), dist_};
+        return std::make_unique<trace_type>(std::move(value), dist_);
     }
 
     template<class RNGType>
-    std::pair<trace_type, double>
+    std::pair<std::unique_ptr<trace_type>, double>
     generate(RNGType &rng, const EmptyModule& parameters, const ChoiceTrie& constraints,
-             bool prepare_for_gradients=false) const {
+             const GenerateOptions&) const {
         return_type value;
         double log_weight;
         if (constraints.has_value()) {
@@ -107,7 +123,7 @@ public:
         } else {
             throw std::domain_error("expected primitive or empty choice dict");
         }
-        return {trace_type(std::move(value), dist_), log_weight};
+        return {std::make_unique<trace_type>(std::move(value), dist_), log_weight};
     }
 
 

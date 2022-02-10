@@ -1,0 +1,53 @@
+name: Build and Deploy Docs
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Download LibTorch
+      run: |
+        wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-1.10.1%2Bcpu.zip
+        unzip libtorch-cxx11-abi-shared-with-deps-1.10.2+cpu.zip
+
+    - name: Checkout GenTorch repository
+      uses: actions/checkout@v2
+      with:
+        submodules: true
+
+    - name: Checkout gentorch-docs repository
+      uses: actions/checkout@v2
+      with:
+        repository: OpenGen/gentorch-docs 
+        path: gentorch-docs
+        ssh-key: ${{secrets.GENTORCH_DOCS_DEPLOY_KEY }}
+
+    - name: Install C++ compiler and Doxygen
+      run: |
+        sudo apt update
+        sudo apt install gcc-11 g++-11
+        sudo apt install doxygen doxygen-doc graphviz
+        
+    - name: Configure CMake
+      env:
+        CXX: g++-11
+      run: cmake -S ${{github.workspace}} -B ${{github.workspace}}/build -DCMAKE_PREFIX_PATH=${{github.workspace}}/libtorch
+      
+    - name: Build GenTorch HTML documentation using Doxygen
+      run: |
+        cmake --build ${{github.workspace}}/build
+        cmake --build ${{github.workspace}}/build --target docs
+
+    - name: Commit and push GenTorch HTML documentation to gentorch-docs repository
+      run: |
+        cp -RT ${{github.workspace}}/build/docs/html/ ${{github.workspace}}/gentorch-docs/latest/
+        cd ${{github.workspace}}/gentorch-docs
+        git add -A
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git config user.name "GenTorch documentation bot"
+        git commit -m "Documentation update"
+        git push
