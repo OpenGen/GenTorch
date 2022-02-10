@@ -56,7 +56,7 @@ public:
         return score_;
     }
 
-    [[nodiscard]] ChoiceTrie get_choice_trie() const override {
+    [[nodiscard]] ChoiceTrie choices() const override {
         ChoiceTrie trie{};
         trie.set_value(value_);
         return trie; // copy elision

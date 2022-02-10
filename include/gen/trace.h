@@ -35,7 +35,7 @@ namespace gen {
         /**
          * @return the choice trie.
          */
-        [[nodiscard]] virtual ChoiceTrie get_choice_trie() const = 0;
+        [[nodiscard]] virtual ChoiceTrie choices() const = 0;
 
 //        /**
 //         * @return the log joint density.

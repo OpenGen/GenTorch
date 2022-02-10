@@ -81,7 +81,7 @@ TEST_CASE("simulate", "[dml]") {
     std::random_device rd{};
     std::mt19937 gen{rd()};
     auto trace = model.simulate(gen, parameters, SimulateOptions().precompute_gradient(true));
-    ChoiceTrie choices = trace->get_choice_trie();
+    ChoiceTrie choices = trace->choices();
     REQUIRE(choices.get_subtrie({"z1"}).has_value());
     REQUIRE(choices.get_subtrie({"z2"}).has_value());
 }
@@ -97,7 +97,7 @@ TEST_CASE("generate", "[dml]") {
     constraints.set_value({"recursive", "z1"}, tensor(1.0));
     constraints.set_value({"recursive", "z2"}, tensor(3.0));
     auto [trace, log_weight] = model.generate(gen, parameters, constraints, GenerateOptions().precompute_gradient(true));
-    ChoiceTrie choices = trace->get_choice_trie();
+    ChoiceTrie choices = trace->choices();
     REQUIRE(any_cast<Tensor>(choices.get_value({"z1"})).equal(tensor(-1.0)));
     REQUIRE(any_cast<Tensor>(choices.get_value({"z2"})).equal(tensor(2.0)));
     REQUIRE(any_cast<Tensor>(choices.get_value({"recursive", "z1"})).equal(tensor(1.0)));

@@ -29,7 +29,7 @@ The `Trace` abstract class contains a set of virtual member functions that const
 
 Note that the `get_return_value` virtual member function returns a value of type `std::any`, and that depending on the underlying data type, mutating this value may mutate the value stored in the trace (this is the case for `Tensor` values).
 Therefore, users should not mutate values obtained with `get_return_value`.
-The same is true for `Tensor` values obtained from `get_choice_trie`.
+The same is true for `Tensor` values obtained from `choices`.
 
 ## DML trace implementation
 

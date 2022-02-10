@@ -235,7 +235,7 @@ public:
         // TODO handle calls at the empty address properly
         for (const auto&[key, subtrie]: subtraces.subtries()) {
             if (subtrie.has_value()) {
-                trie.set_subtrie(Address{key}, subtrie.get_value()->get_choice_trie());
+                trie.set_subtrie(Address{key}, subtrie.get_value()->choices());
             } else if (subtrie.empty()) {
             } else {
                 trie.set_subtrie(Address{key}, get_choice_trie(subtrie));
@@ -246,13 +246,16 @@ public:
 
     void set_value(return_type value) { maybe_value_ = value; }
 
-    [[nodiscard]] ChoiceTrie get_choice_trie() const override {
+    [[nodiscard]] ChoiceTrie choices() const {
         return get_choice_trie(*subtraces_);
     }
 
-    const args_type &get_args() const { return args_.first; }
+    // TODO
+    [[nodiscard]] ChoiceTrie choices(const gentl::selection::All&) const {
+        return choices();
+    }
 
-    // TODO: change retval_grad to use retval_type, and similarly for gradients_args
+    const args_type &get_args() const { return args_.first; }
 
     args_type parameter_gradient(GradientAccumulator& accumulator, return_type retval_grad, double scaler) {
 
