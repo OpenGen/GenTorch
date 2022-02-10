@@ -2,7 +2,7 @@
 
 **Work-in-progress** probabilistic programming language for use with [GenTL](https://github.com/OpenGen/GenTL), building on [LibTorch](https://pytorch.org/cppdocs/installing.html).
 
-[**Documentation**](https://opengen.github.io/gentorch-docs/)
+[**Documentation**](https://opengen.github.io/gentorch-docs/latest/)
 
 ## External dependencies
 
