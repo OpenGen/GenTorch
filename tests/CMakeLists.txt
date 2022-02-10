@@ -22,7 +22,7 @@ target_compile_features(testlib PRIVATE cxx_std_17)
 target_include_directories(testlib PRIVATE ../third_party/gentl/include/)
 
 # Should be linked to the main library, as well as the Catch2 testing library
-target_link_libraries(testlib PRIVATE gen_library Catch2::Catch2)
+target_link_libraries(testlib PRIVATE gentorch_library Catch2::Catch2)
 
 # discover and register Catch test cases
 message(STATUS "catch source dir: ${catch2_SOURCE_DIR}")
@@ -33,4 +33,4 @@ catch_discover_tests(testlib)
 
 ## for experimentation
 #add_executable(scrap scrap.cpp)
-#target_link_libraries(scrap PRIVATE gen_library)
+#target_link_libraries(scrap PRIVATE gentorch_library)
