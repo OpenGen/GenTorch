@@ -9,15 +9,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
-    - name: Download LibTorch
-      run: |
-        wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-1.10.1%2Bcpu.zip
-        unzip libtorch-cxx11-abi-shared-with-deps-1.10.1+cpu.zip
-        pwd
-        echo $${{github.workspace}}
-        ls ${{github.workspace}}
-        ls ${{github.workspace}}/libtorch/
-
     - name: Checkout GenTorch repository
       uses: actions/checkout@v2
       with:
@@ -35,13 +26,22 @@ jobs:
         sudo apt update
         sudo apt install gcc-11 g++-11
         sudo apt install doxygen doxygen-doc graphviz
-        
+
+    - name: Download LibTorch
+      run: |
+        wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-1.10.1%2Bcpu.zip
+        unzip libtorch-cxx11-abi-shared-with-deps-1.10.1+cpu.zip
+        pwd
+        echo ${{github.workspace}}
+        ls ${{github.workspace}}
+        ls ${{github.workspace}}/libtorch/
+
     - name: Configure CMake
       env:
         CXX: g++-11
       run: |
         pwd
-        echo $${{github.workspace}}
+        echo ${{github.workspace}}
         ls ${{github.workspace}}
         ls ${{github.workspace}}/libtorch/
         cmake -S ${{github.workspace}} -B ${{github.workspace}}/build -DCMAKE_PREFIX_PATH=${{github.workspace}}/libtorch/
