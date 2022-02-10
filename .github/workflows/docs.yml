@@ -13,11 +13,6 @@ jobs:
       run: |
         wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-1.10.1%2Bcpu.zip
         unzip libtorch-cxx11-abi-shared-with-deps-1.10.1+cpu.zip
-        pwd
-        ls $(pwd)/libtorch/
-        ls ${{github.workspace}}/libtorch/
-        ls $(pwd)
-        ls ${{github.workspace}}
 
     - name: Checkout GenTorch repository
       uses: actions/checkout@v2
@@ -40,7 +35,7 @@ jobs:
     - name: Configure CMake
       env:
         CXX: g++-11
-      run: cmake -S ${{github.workspace}} -B ${{github.workspace}}/build -DCMAKE_PREFIX_PATH=$(pwd)/libtorch/
+      run: cmake -S ${{github.workspace}} -B ${{github.workspace}}/build -DCMAKE_PREFIX_PATH=${{github.workspace}}/libtorch/
       
     - name: Build GenTorch HTML documentation using Doxygen
       run: |
