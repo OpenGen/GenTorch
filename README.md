@@ -1,6 +1,8 @@
 # GenTorch
 
-This repository is based on the hypothesis that a port of [Gen](gen.dev) to C++, using LibTorch for numerical types and operations and automatic differentiation, will be useful for industry research use cases, will be a potential backend for a port of Gen to Python, will provide a balance of ergonomics and performance for learning and inference in structured generative models with stochastic structure, and and will be useful for real-time applications in robotics, computer vision, perception, and human-understanding.
+**Work-in-progress** probabilistic programming language for use with [GenTL](https://github.com/OpenGen/GenTL), building on [LibTorch](https://pytorch.org/cppdocs/installing.html).
+
+[**Documentation**](https://opengen.github.io/gentorch-docs/)
 
 ## External dependencies
 
@@ -30,7 +32,7 @@ See [Doxygen Installation](https://www.doxygen.nl/manual/install.html).
 
 Currently this project builds a static library, tests, and documentation.
 
-To build, either open the `libgen-experimental` directory in a C++ IDE (e.g. [https://www.jetbrains.com/clion/](CLion)) or use `cmake` directly.
+To build, either open the `GenTorch` directory in a C++ IDE (e.g. [https://www.jetbrains.com/clion/](CLion)) or use `cmake` directly.
 In either case, you need to add an option `-DCMAKE_PREFIX_PATH=/absolute/path/to/libtorch` when configuring cmake.
 
 To configure:
