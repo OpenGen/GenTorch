@@ -4,7 +4,7 @@ if(${CMAKE_VERSION} VERSION_LESS 3.12)
     cmake_policy(VERSION ${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION})
 endif()
 
-project(Gen VERSION 1.0
+project(GenTorch VERSION 1.0
             LANGUAGES CXX)
 
 find_package(Threads REQUIRED)
