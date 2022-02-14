@@ -1,0 +1,8 @@
+//
+// Created by marcoct on 2/13/22.
+//
+
+#ifndef GENTORCH_PARAMETER_GRADIENT_H
+#define GENTORCH_PARAMETER_GRADIENT_H
+
+#endif //GENTORCH_PARAMETER_GRADIENT_H

@@ -163,6 +163,8 @@ pair<const args_type &, unique_ptr<const args_type>> maybe_track_args(const args
     }
 }
 
+template<typename Generator, typename Model>
+class DMLUpdateTracer;
 
 /**
  * NOTE: not copy-constructible!
@@ -171,17 +173,31 @@ pair<const args_type &, unique_ptr<const args_type>> maybe_track_args(const args
  */
 template<typename Model>
 class DMLTrace : public Trace {
+
 public:
     typedef typename Model::return_type return_type;
     typedef typename Model::args_type args_type;
     typedef typename Model::parameters_type parameters_type;
-    typedef std::pair<DMLTrace<Model>, double> update_return_type;
 
-    explicit DMLTrace(const args_type &args, bool prepare_for_gradients, bool assert_retval_grad,
+private:
+    struct DataBlock {
+        Model gen_fn_with_args;
+        pair<const args_type&, std::unique_ptr<const args_type>> args;
+        Trie<std::unique_ptr<Trace>> subtraces;
+        double score;
+        optional<return_type> maybe_value_;
+    };
+
+
+public:
+
+    // TODO optimize away the double copying of arguments
+    explicit DMLTrace(Model gen_fn_with_args,
+                      const args_type &args, bool prepare_for_gradients, bool assert_retval_grad,
                       parameters_type& parameters) :
+            gen_fn_with_args_{gen_fn_with_args},
             subtraces_{std::make_unique<Trie<unique_ptr<Trace>>>()},
             score_{0.0},
-            assert_retval_grad_{assert_retval_grad},
             args_{maybe_track_args(args, prepare_for_gradients)},
             prepared_for_gradients_{prepare_for_gradients},
             parameters_{parameters},
@@ -203,30 +219,41 @@ public:
 
     ~DMLTrace() override = default;
 
-    [[nodiscard]] double get_score() const { return score_; }
+    [[nodiscard]] double score() const override { return data_->score; }
 
     [[nodiscard]] const return_type& get_return_value() const {
-        if (!maybe_value_.has_value()) {
+        if (!data_->maybe_value.has_value()) {
             throw std::runtime_error("set_value was never called");
         }
-        return maybe_value_.value();
+        return data_->maybe_value.value();
     }
 
     template<typename SubtraceType>
-    SubtraceType& add_subtrace(const Address &address, std::unique_ptr<SubtraceType>&& subtrace_ptr) {
-        score_ += subtrace_ptr->get_score();
+    std::pair<SubtraceType&,double> add_subtrace(Trie<std::unique_ptr<Trace>>& subtraces, const Address &address, std::unique_ptr<SubtraceType>&& subtrace_ptr) {
         try {
             SubtraceType* subtrace_observer_ptr = subtrace_ptr.get();
             std::unique_ptr<Trace> subtrace_base_ptr = std::move(subtrace_ptr);
-            subtraces_->set_value(address, std::move(subtrace_base_ptr), false);
-            return *subtrace_observer_ptr;
+            subtraces->set_value(address, std::move(subtrace_base_ptr), false);
+            return {*subtrace_observer_ptr, subtrace_ptr->score()};
         } catch (const TrieOverwriteError &) {
             throw DMLAlreadyVisitedError(address);
         }
     }
 
+    template<typename SubtraceType>
+    SubtraceType& add_subtrace(const Address &address, std::unique_ptr<SubtraceType>&& subtrace_ptr) {
+        auto [subtrace_ref, score_increment] = add_subtrace(
+                data_->subtraces, address, subtrace_ptr);
+        data_->score += score_increment;
+        return subtrace_ref;
+    }
+
     [[nodiscard]] bool has_subtrace(const Address &address) const {
-        return subtraces_->get_subtrie(address).has_value();
+        return data_->subtraces->get_subtrie(address).has_value();
+    }
+
+    [[nodiscard]] Trace* get_subtrace(const Address &address) const {
+        return data_->subtraces->get_subtrie(address).get_value().get();
     }
 
     static ChoiceTrie get_choice_trie(const Trie<unique_ptr<Trace>> &subtraces) {
@@ -246,7 +273,7 @@ public:
 
     void set_value(return_type value) { maybe_value_ = value; }
 
-    [[nodiscard]] ChoiceTrie choices() const {
+    [[nodiscard]] ChoiceTrie choices() const override {
         return get_choice_trie(*subtraces_);
     }
 
@@ -341,18 +368,52 @@ public:
         return tracked_value;
     }
 
+    void set_backward_constraints(std::unique_ptr<ChoiceTrie>&& backward_constraints) {
+        backward_constraints_ = std::move(backward_constraints);
+    }
+
+    const ChoiceTrie& backward_constraints() {
+        return *backward_constraints_;
+    }
+
+    template <typename RNG>
+    double update(RNG& rng, gentl::change::UnknownChange<args_type>& change,
+                  const ChoiceTrie& contraints, const UpdateOptions& options) {
+        c10::InferenceMode guard{
+                !options.precompute_gradient()}; // inference mode is on if we are not preparing for gradients
+        gen_fn_with_args_alternate_ = std::make_unique<Model>(change.new_value());
+
+        DMLUpdateTracer<RNG,Model> tracer{
+            rng, change, parameters_,
+            gen_fn_with_args_alternate_
+
+                                          ,
+                                          options.precompute_gradient(),
+                                          false, options.save()};
+        auto value = gen_fn_with_args_.forward(tracer);
+        can_be_reverted_ = options.save();
+        return tracer.finish(value);
+    }
+
+    void revert() {
+        if (!can_be_reverted_)
+            throw std::logic_error("trace can not be reverted");
+        std::swap(data_, data_alternate_);
+        can_be_reverted_ = false;
+    }
+
+
+
 private:
-    pair<const args_type&, std::unique_ptr<const args_type>> args_;
-    std::unique_ptr<Trie<std::unique_ptr<Trace>>> subtraces_;
-    ChoiceTrie choices_;
-    double score_;
-    optional<return_type> maybe_value_;
+    std::unique_ptr<Model> data_;
+    std::unique_ptr<Model> data_alternate_{nullptr};
+    bool can_be_reverted_{false};
     bool prepared_for_gradients_;
-    bool assert_retval_grad_;
     std::unique_ptr<GradientHelper> helper_;
     parameters_type& parameters_;
     Tensor dummy_input_;
     Tensor dummy_output_;
+    std::unique_ptr<ChoiceTrie> backward_constraints_{nullptr};
 };
 
 
@@ -366,38 +427,74 @@ class DMLUpdateTracer {
 public:
     typedef typename Model::args_type args_type;
     typedef typename Model::parameters_type parameters_type;
-    using trace_type = DMLTrace<Model>;
+    typedef DMLTrace<Model> trace_type;
 
-    explicit DMLUpdateTracer(Generator &gen, const args_type &args, parameters_type& parameters,
-                             const ChoiceTrie &constraints, const Trace* prev_trace,
-                             bool prepare_for_gradients, bool assert_retval_grad) :
+    explicit DMLUpdateTracer(Generator& gen, const args_type& args, parameters_type& parameters,
+                             const ChoiceTrie& constraints, const trace_type& prev_trace,
+                             bool prepare_for_gradients, bool assert_retval_grad, bool save) :
             finished_(false),
             gen_{gen},
             trace_{std::make_unique<trace_type>(args, prepare_for_gradients, assert_retval_grad, parameters)},
+            prev_trace_{prev_trace},
             log_weight_(0.0),
             constraints_(constraints),
             prepare_for_gradients_{prepare_for_gradients},
-            parameters_{parameters} {
+            parameters_{parameters},
+            save_{save},
+            backward_constraints_{std::move(std::make_unique<ChoiceTrie>())} {
         assert(!(prepare_for_gradients && c10::InferenceMode::is_enabled()));
     }
 
-    const args_type &get_args() const { return trace_->get_args(); }
+    const args_type& get_args() const { return trace_->get_args(); }
+
+    double add_unvisited(const Trie<std::unique_ptr<Trace>>& subtraces, ChoiceTrie& backward_constraints) {
+        // TODO recursively visit subtraces and backward_constraints, and add
+        // backward traces for unvisited subtraces to backward_constraints_
+        double unvisited_score = 0.0;
+        for (const auto& [address, subtraces_subtrie] : subtraces.subtries()) {
+            assert(!subtraces_subtrie.empty());
+            if (!backward_constraints.has_subtrie(address)) {
+                if (subtraces_subtrie.has_value()) {
+                    auto subtrace = subtraces_subtrie.get_value();
+                    backward_constraints.set_subtrie(address, subtrace->choices());
+                    unvisited_score += subtrace->score();
+                } else {
+                    ChoiceTrie backward_subtrie;
+                    unvisited_score += add_unvisited(subtraces_subtrie, backward_subtrie);
+                    backward_constraints.set_subtrie(address, std::move(backward_subtrie));
+                }
+            }
+        }
+        return unvisited_score;
+    }
 
     template<typename CalleeType, typename CalleeParametersType>
     typename CalleeType::return_type
-    call(Address &&address, CalleeType &&gen_fn_with_args, CalleeParametersType& parameters) {
+    call(Address&& address, CalleeType&& gen_fn_with_args, CalleeParametersType& parameters) {
         typedef typename CalleeType::args_type callee_args_type;
         typedef typename CalleeType::trace_type callee_trace_type;
         typedef typename CalleeType::return_type callee_return_type;
         assert(!finished_); // if this assertion fails, it is a bug in DML not user code
         ChoiceTrie sub_constraints{constraints_.get_subtrie(address, false)};
-        auto [subtrace_ptr, log_weight_increment] = gen_fn_with_args.generate(
-                gen_, parameters, sub_constraints, GenerateOptions().precompute_gradient(prepare_for_gradients_));
-        callee_trace_type& subtrace = trace_->add_subtrace(address, std::move(subtrace_ptr));
-        log_weight_ += log_weight_increment;
-        const callee_return_type& value = subtrace.get_return_value();
+        callee_trace_type* subtrace = nullptr;
+        if (prev_trace_.has_subtrace(address)) {
+            subtrace = prev_trace_.get_subtrace(address);
+            log_weight_ += subtrace->update(
+                    gen_, gentl::change::UnknownChange(gen_fn_with_args.get_args()), sub_constraints,
+                    UpdateOptions().precompute_gradient(prepare_for_gradients_).save(save_));
+            // TODO avoid copy of subtrace_backward by modifying set_subtrie interface to accept unique_ptr
+            const ChoiceTrie& subtrace_backward = subtrace->backward_constraints();
+            backward_constraints_->set_subtrie(address, subtrace_backward);
+        } else {
+            auto [subtrace_ptr, log_weight_increment] = gen_fn_with_args.generate(
+                    gen_, parameters, sub_constraints, GenerateOptions().precompute_gradient(prepare_for_gradients_));
+            log_weight_ += log_weight_increment;
+            // TODO here
+            subtrace = &add_subtrace(address, std::move(subtrace_ptr));
+        }
+        const callee_return_type& value = subtrace->get_return_value();
         if (prepare_for_gradients_) {
-            return trace_->make_tracked_return_value(subtrace, gen_fn_with_args.get_args(), value);
+            return trace_->make_tracked_return_value(*subtrace, gen_fn_with_args.get_args(), value);
         } else {
             return value; // copy
         }
@@ -411,23 +508,31 @@ public:
 
     std::pair<std::unique_ptr<DMLTrace<Model>>, double> finish(typename Model::return_type value) {
         assert(!(prepare_for_gradients_ && c10::InferenceMode::is_enabled()));
+        log_weight_ += add_unvisited(prev_trace_->subtraces_, *backward_constraints_); // mutates backward_constraints_
+        backward_constraints_->remove_empty_subtries();
         finished_ = true;
         trace_->set_value(value);
-        return std::pair(std::move(trace_), log_weight_); // TODO trace_
+        trace_->set_backward_constraints(std::move(backward_constraints_));
+        return log_weight_;
     }
 
     parameters_type& get_parameters() { return parameters_; }
 
     bool prepare_for_gradients() const { return prepare_for_gradients_; }
 
+    // TODO fork()
+
 private:
     double log_weight_;
     bool finished_;
     Generator &gen_;
-    std::unique_ptr<DMLTrace<Model>> trace_;
+    const trace_type& prev_trace_;
     const ChoiceTrie &constraints_;
     bool prepare_for_gradients_;
     parameters_type& parameters_;
+    std::unique_ptr<ChoiceTrie> backward_constraints_;
+    bool save_;
+    // TODO log_weight needs subtraction of removed traces
 };
 
 
