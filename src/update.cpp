@@ -98,6 +98,7 @@ public:
             num_active_subtraces_ += 1;
             auto it = subtraces_.find(address);
             if (it != subtraces_.end()) {
+                // TODO THIS CODE IS NOT YET INTEGRATED INTO UPDATE.H BEGIN
                 // previous record found
                 SubtraceRecord& record = it->second;
                 if (record.was_active) {
@@ -108,6 +109,7 @@ public:
                     record.subtrace->update(new_value, false, true);
                 }
                 record.is_active = true;
+                // END
             } else {
                 // no previous record found
                 std::unique_ptr<Subtrace> subtrace = std::make_unique<Subtrace>(new_value);
@@ -230,7 +232,7 @@ int main() {
     assert(!trace.has_subtrace(1));
     assert(!trace.has_subtrace(2));
     assert(!trace.has_subtrace(3));
-    assert(trace.has_subtrace(4) && !trace.has_active_subtrace(4)); // saved, revert_on_restore should be false here
+    assert(trace.has_subtrace(4) && !trace.has_active_subtrace(4)); // saved
     assert(trace.has_active_subtrace(5) && trace.subtrace(5).value == "h");
     assert(trace.has_active_subtrace(6) && trace.subtrace(6).value == "i");
 
@@ -273,7 +275,7 @@ int main() {
     assert(!trace.has_subtrace(1));
     assert(!trace.has_subtrace(2));
     assert(!trace.has_subtrace(3));
-    assert(trace.has_subtrace(4) && !trace.has_active_subtrace(4)); // saved, revert_on_restore should not be set TODO
+    assert(trace.has_subtrace(4) && !trace.has_active_subtrace(4)); // saved
     assert(trace.has_subtrace(5) && !trace.has_active_subtrace(5)); // saved
     assert(trace.has_active_subtrace(6));
     assert(trace.has_active_subtrace(7));
@@ -287,7 +289,7 @@ int main() {
     assert(!trace.has_subtrace(1));
     assert(!trace.has_subtrace(2));
     assert(!trace.has_subtrace(3));
-    assert(trace.has_subtrace(4) && !trace.has_active_subtrace(4)); // saved, revert_on_restore should not be set TODO
+    assert(trace.has_subtrace(4) && !trace.has_active_subtrace(4)); // saved
     assert(trace.has_subtrace(5) && !trace.has_active_subtrace(5)); // saved
     assert(!trace.has_subtrace(6));
     assert(trace.has_active_subtrace(7));

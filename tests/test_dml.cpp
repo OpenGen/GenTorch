@@ -15,7 +15,7 @@ See the License for the specific language governing permissions and
 
 #include <catch2/catch.hpp>
 #include <gen/trie.h>
-#include <gen/dml.h>
+#include <gen/dml/dml.h>
 #include <gen/distributions/normal.h>
 
 #include <gentl/types.h>
@@ -112,7 +112,7 @@ void do_simulate(int idx, int n, std::vector<double>& scores, EmptyModule& param
         Tensor z = tensor(1.0, TensorOptions().dtype(torch::kFloat64));
         auto model = Foo(z, 0);
         auto trace = model.simulate(gen, parameters, SimulateOptions());
-        score += trace->get_score();
+        score += trace->score();
     }
     scores[idx] = score;
 }

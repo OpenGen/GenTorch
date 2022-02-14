@@ -37,10 +37,11 @@ namespace gen {
          */
         [[nodiscard]] virtual ChoiceTrie choices() const = 0;
 
-//        /**
-//         * @return the log joint density.
-//         */
-//        [[nodiscard]] virtual double get_score() const = 0;
+        /**
+         * @return the log joint density.
+         */
+        [[nodiscard]] virtual double score() const = 0;
+
 
 //        /**
 //         * @return the return value of the generative function.

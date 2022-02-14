@@ -38,7 +38,7 @@ public:
 
     PrimitiveTrace(return_type &&value, const dist_type &dist) : value_{value}, dist_{dist}, score_{0.0} {}
 
-    [[nodiscard]] const return_type& get_return_value() const {
+    [[nodiscard]] const return_type& return_value() const {
         return value_;
     }
 
@@ -52,7 +52,7 @@ public:
         return GenFnType::extract_argument_gradient(grads);
     }
 
-    [[nodiscard]] double get_score() const {
+    [[nodiscard]] double score() const override {
         return score_;
     }
 
