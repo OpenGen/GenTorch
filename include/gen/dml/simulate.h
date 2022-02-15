@@ -11,16 +11,15 @@ public:
     using trace_type = DMLTrace<Model>;
 
     explicit DMLSimulateTracer(RNG& rng,
-                               Model gen_fn_with_args,
+                               const Model& gen_fn_with_args,
                                parameters_type &parameters,
                                bool prepare_for_gradients, bool assert_retval_grad) :
             finished_(false),
             rng_{rng},
-            trace_{std::make_unique<trace_type>(std::move(gen_fn_with_args), prepare_for_gradients,
+            trace_{std::make_unique<trace_type>(gen_fn_with_args, prepare_for_gradients,
                                                 assert_retval_grad, parameters)},
             prepare_for_gradients_{prepare_for_gradients},
             parameters_{parameters} {
-        assert(!(prepare_for_gradients && c10::InferenceMode::is_enabled()));
     }
 
     const args_type& get_args() const { return trace_->get_args(); }
@@ -28,10 +27,9 @@ public:
     template<typename CalleeType, typename CalleeParametersType>
     typename CalleeType::return_type
     call(Address &&address, CalleeType &&gen_fn_with_args, CalleeParametersType &parameters) {
-        typedef typename CalleeType::args_type callee_args_type;
+        c10::InferenceMode guard{true};
         typedef typename CalleeType::trace_type callee_trace_type;
-        typedef typename CalleeType::return_type callee_return_type;
-        assert(!finished_); // if this assertion fails, it is a bug in DML not user code
+        assert(!finished_);
         callee_trace_type &subtrace = trace_->add_subtrace(address,
                                                            gen_fn_with_args.simulate(
                                                                    rng_, parameters,
@@ -52,16 +50,15 @@ public:
     }
 
     std::unique_ptr <DMLTrace<Model>> finish(typename Model::return_type value) {
-        assert(!(prepare_for_gradients_ && c10::InferenceMode::is_enabled()));
+        c10::InferenceMode guard{true};
         finished_ = true;
         trace_->set_value(value);
         return std::move(trace_);
     }
 
-    // for use in the body of the exec() function
-    parameters_type &get_parameters() { return parameters_; }
+    parameters_type& get_parameters() { return parameters_; }
 
-    bool prepare_for_gradients() const { return prepare_for_gradients_; }
+    [[nodiscard]] bool prepare_for_gradients() const { return prepare_for_gradients_; }
 
 private:
     bool finished_;
@@ -74,13 +71,15 @@ private:
 template<typename Model, typename Args, typename Return, typename Parameters>
 template<typename RNG>
 std::unique_ptr<DMLTrace<Model>> DMLGenFn<Model, Args, Return, Parameters>::simulate(RNG& rng, Parameters &parameters,
-                                                                                      const SimulateOptions &options) {
-    c10::InferenceMode guard{
-            !options.precompute_gradient()}; // inference mode is on if we are not preparing for gradients
+                                                                                     const SimulateOptions &options) {
+    c10::InferenceMode guard{true};
     DMLSimulateTracer<RNG, Model> tracer{
         rng, *static_cast<Model*>(this), parameters, options.precompute_gradient(), assert_retval_grad_};
-    auto value = static_cast<Model*>(this)->forward(tracer);
-    return tracer.finish(value);
+    {
+        c10::InferenceMode inner_guard{!options.precompute_gradient()};
+        auto value = static_cast<Model*>(this)->forward(tracer);
+        return tracer.finish(value);
+    }
 }
 
 }

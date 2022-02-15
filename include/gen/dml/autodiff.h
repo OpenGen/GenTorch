@@ -7,6 +7,7 @@
 
 #include <torch/torch.h>
 
+#include <gen/conversions.h>
 #include <gen/parameters.h>
 
 using std::vector;
@@ -21,9 +22,11 @@ using torch::autograd::Node;
 
 using gen::GradientAccumulator;
 
+namespace gen::dml {
+
 template<typename T>
 T detach_clone_and_track(const T &args) {
-    assert(!c10::InferenceMode::is_enabled());
+    c10::InferenceMode guard{false};
     vector<Tensor> args_unrolled = unroll(args);
     vector<Tensor> args_unrolled_copy;
     for (auto &t: args_unrolled) {
@@ -33,7 +36,7 @@ T detach_clone_and_track(const T &args) {
 }
 
 template<typename args_type>
-pair<const args_type &, unique_ptr<const args_type>> maybe_track_args(const args_type &args,
+pair<const args_type&, unique_ptr<const args_type>> maybe_track_args(const args_type &args,
                                                                       bool prepare_for_gradients) {
     if (prepare_for_gradients) {
         auto tracked_args_ptr = make_unique<const args_type>(detach_clone_and_track(args));
@@ -63,7 +66,7 @@ struct MyGradNode : public Node {
     ~MyGradNode() override = default;
 
     variable_list apply(variable_list &&output_grad) override {
-        const return_value_type &return_value = subtrace_.get_return_value();
+        const return_value_type &return_value = subtrace_.return_value();
 
         // read off the return value gradient from the output_grad
         auto[num_read, return_value_grad] = roll(output_grad, 0, return_value);
@@ -90,7 +93,7 @@ struct MyNode : public Node {
     ~MyNode() override = default;
 
     variable_list apply(variable_list &&inputs) override {
-        const return_type &value = subtrace_.get_return_value();
+        const return_type &value = subtrace_.return_value();
         vector<Tensor> output = unroll(value);
 
         // value that we use to ensure the corresponding MyGradNode is visited in the backward pass
@@ -107,5 +110,7 @@ private:
     subtrace_type &subtrace_;
     const GradientHelper &helper_;
 };
+
+}
 
 #endif //GENTORCH_AUTODIFF_H

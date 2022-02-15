@@ -107,7 +107,7 @@ private:
     double score_alternate_;
 
     std::optional<return_type> maybe_value_;
-    std::optional<return_type> maybe_value_alternate_ = nullptr;;
+    std::optional<return_type> maybe_value_alternate_;
 
     bool prepared_for_gradients_;
     bool can_be_reverted_{false};
@@ -115,25 +115,29 @@ private:
     pair<const args_type&, std::unique_ptr<const args_type>> args_;
     std::unique_ptr<GradientHelper> helper_;
     parameters_type &parameters_;
-    Tensor dummy_input_;
-    Tensor dummy_output_;
+    std::unique_ptr<Tensor> dummy_input_ = nullptr;
+    std::unique_ptr<Tensor> dummy_output_ = nullptr;
     std::unique_ptr<ChoiceTrie> backward_constraints_ = nullptr;
 
 public:
 
-    // TODO optimize away the double copying of arguments
+    // TODO make this private
     explicit DMLTrace(const Model& gen_fn_with_args,
                       bool prepare_for_gradients, bool assert_retval_grad,
                       parameters_type &parameters) :
             gen_fn_with_args_{std::make_unique<Model>(gen_fn_with_args)},
-            args_{maybe_track_args(gen_fn_with_args.get_args(), prepare_for_gradients)},
+            args_{maybe_track_args(gen_fn_with_args_->get_args(), prepare_for_gradients)},
             prepared_for_gradients_{prepare_for_gradients},
             parameters_{parameters},
-            helper_{std::make_unique<GradientHelper>()},
-            dummy_input_{torch::tensor(0.0, torch::TensorOptions().requires_grad(prepare_for_gradients))},
-            dummy_output_{torch::tensor(0.0)} {
-        if (prepare_for_gradients)
-            dummy_output_ += dummy_input_;
+            helper_{std::make_unique<GradientHelper>()} {
+        assert(c10::InferenceMode::is_enabled());
+        {
+            // these values will only be used by gradient operations
+            c10::InferenceMode guard{false};
+            dummy_input_ = std::make_unique<Tensor>(torch::tensor(0.0, torch::TensorOptions().requires_grad(true)));
+            dummy_output_ = std::make_unique<Tensor>(torch::tensor(0.0));
+            *dummy_output_ += *dummy_input_;
+        }
     }
 
     DMLTrace(const DMLTrace& other) = default;
@@ -162,7 +166,7 @@ public:
             bool save_ = false;
             SubtraceRecord record{is_active_, save_, std::move(subtrace_base_ptr)};
             subtraces.set_value(address, std::move(record), false);
-            return {*subtrace_observer_ptr, subtrace_ptr->score()};
+            return {*subtrace_observer_ptr, subtrace_observer_ptr->score()};
         } catch (const TrieOverwriteError &) {
             throw DMLAlreadyVisitedError(address);
         }
@@ -171,17 +175,9 @@ public:
     template<typename SubtraceType>
     SubtraceType& add_subtrace(const Address& address, std::unique_ptr<SubtraceType>&& subtrace_ptr) {
         auto [subtrace_ref, score_increment] = add_subtrace(
-                subtraces_, address, subtrace_ptr);
+                subtraces_, address, std::forward<std::unique_ptr<SubtraceType>>(subtrace_ptr));
         score_ += score_increment;
         return subtrace_ref;
-    }
-
-    [[nodiscard]] bool has_subtrace(const Address& address) const {
-        return subtraces_.get_subtrie(address).has_value();
-    }
-
-    [[nodiscard]] SubtraceRecord& get_subtrace_record(const Address& address) const {
-        return subtraces_.get_subtrie(address).get_value();
     }
 
     static ChoiceTrie get_choice_trie(const Trie<SubtraceRecord>& subtraces) {
@@ -210,13 +206,33 @@ public:
         return choices();
     }
 
-    const args_type& get_args() const { return args_; }
+    const args_type& get_args() const {
+        return args_.first;
+    }
+
+
+    template <typename callee_args_type, typename callee_return_type, typename subtrace_type>
+    callee_return_type make_tracked_return_value(subtrace_type &subtrace, const callee_args_type &tracked_args, const callee_return_type &value) {
+        auto node = MyNode<callee_args_type, callee_return_type, subtrace_type>(subtrace, *helper_);
+        c10::InferenceMode guard{false};
+        // NOTE: gen_fn_with_args.get_args() returns args that are tracked as part of the autograd graph
+        std::vector<Tensor> inputs = unroll(tracked_args);
+        assert(dummy_input_->requires_grad());
+        inputs.emplace_back(*dummy_input_);
+        auto outputs = node(std::move(inputs));
+        auto[num_read, tracked_value] = roll(outputs, 0, value);
+        assert(num_read == outputs.size() - 1);
+        Tensor dummy = outputs[num_read];
+        assert(dummy.requires_grad());
+        *dummy_output_ += dummy;
+        assert(dummy_output_->requires_grad());
+        return tracked_value;
+    }
 
     // parameter_gradient.h
     args_type parameter_gradient(GradientAccumulator &accumulator, return_type retval_grad, double scaler);
     args_type parameter_gradient(GradientAccumulator &accumulator, double scaler);
-    template<typename callee_args_type, typename callee_return_type, typename subtrace_type>
-    callee_return_type make_tracked_return_value(subtrace_type &subtrace, const callee_args_type &tracked_args, const callee_return_type &value);
+
 
     // update.h
     template<typename RNG>

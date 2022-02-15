@@ -54,23 +54,7 @@ using gen::GradientAccumulator;
 
 namespace gen::dml {
 
-template <typename Model>
-template <typename callee_args_type, typename callee_return_type, typename subtrace_type>
-callee_return_type DMLTrace<Model>::make_tracked_return_value(subtrace_type &subtrace, const callee_args_type &tracked_args, const callee_return_type &value) {
-    auto node = MyNode<callee_args_type, callee_return_type, subtrace_type>(subtrace, *helper_);
-    // NOTE: gen_fn_with_args.get_args() returns args that are tracked as part of the autograd graph
-    std::vector<Tensor> inputs = unroll(tracked_args);
-    assert(dummy_input_.requires_grad());
-    inputs.emplace_back(dummy_input_);
-    auto outputs = node(std::move(inputs));
-    auto[num_read, tracked_value] = roll(outputs, 0, value);
-    assert(num_read == outputs.size() - 1);
-    Tensor dummy = outputs[num_read];
-    assert(dummy.requires_grad());
-    dummy_output_ += dummy;
-    assert(dummy_output_.requires_grad());
-    return tracked_value;
-}
+
 
 
 template<typename Model>
@@ -98,8 +82,8 @@ typename DMLTrace<Model>::args_type DMLTrace<Model>::parameter_gradient(Gradient
     inputs.insert(inputs.end(), local_parameter_tensors.begin(), local_parameter_tensors.end());
 
     // add the dummy input
-    assert(dummy_input_.requires_grad());
-    inputs.emplace_back(dummy_input_);
+    assert(dummy_input_->requires_grad());
+    inputs.emplace_back(*dummy_input_);
 
     // add the return value to the outputs
     const return_type &retval = return_value();
@@ -107,8 +91,8 @@ typename DMLTrace<Model>::args_type DMLTrace<Model>::parameter_gradient(Gradient
     vector<Tensor> output_grads = unroll(retval_grad);
 
     // add the dummy output
-    assert(dummy_output_.requires_grad());
-    outputs.emplace_back(dummy_output_);
+    assert(dummy_output_->requires_grad());
+    outputs.emplace_back(*dummy_output_);
     output_grads.emplace_back(torch::tensor(1.0));
 
     // pass information back to the calls to parameter_gradient() that happen within the backward pass will have

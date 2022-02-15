@@ -52,7 +52,7 @@ public:
         // NOTE: the inference library can include checks that you are in inference mode
     }
 
-    const ArgsType &get_args() const {
+    const ArgsType& get_args() const {
         return args_;
     }
 

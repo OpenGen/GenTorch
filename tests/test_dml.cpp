@@ -58,9 +58,23 @@ public:
     template <typename Tracer>
     return_type forward(Tracer& tracer) const {
         auto& parameters = tracer.get_parameters();
+        const auto& args = tracer.get_args();
+        const auto& z_ = args.first;
+        const auto& depth_ = args.second;
         const auto& [z, depth] = tracer.get_args();
         auto x = tensor(0.0);
-        auto y = tensor(1.0) + z + x;
+        if (tracer.prepare_for_gradients()) {
+            assert(!c10::InferenceMode::is_enabled());
+            assert(!x.is_inference());
+            assert(!z_.is_inference());
+            assert(!tensor(1.0).is_inference());
+        } else {
+            assert(c10::InferenceMode::is_enabled());
+            assert(x.is_inference());
+            assert(z_.is_inference());
+            assert(tensor(1.0).is_inference());
+        }
+        auto y = tensor(1.0) + z_ + x; // TODO was + z + x
         auto a = tensor(0.0);
         auto z1 = tracer.call({"z1"}, Normal(a, tensor(1.0)));
         auto z2 = tracer.call({"z2"}, Normal(z1, tensor(0.1)));
@@ -75,7 +89,15 @@ public:
     }
 };
 
+TEST_CASE("update", "[dml]") {
+
+    // TODO
+
+
+}
+
 TEST_CASE("simulate", "[dml]") {
+    c10::InferenceMode guard{true};
     EmptyModule parameters;
     Foo model {tensor(1.0), 0};
     std::random_device rd{};
@@ -87,6 +109,7 @@ TEST_CASE("simulate", "[dml]") {
 }
 
 TEST_CASE("generate", "[dml]") {
+    c10::InferenceMode guard{true};
     EmptyModule parameters;
     Foo model {tensor(1.0), 0};
     std::random_device rd{};
@@ -105,11 +128,12 @@ TEST_CASE("generate", "[dml]") {
 }
 
 void do_simulate(int idx, int n, std::vector<double>& scores, EmptyModule& parameters) {
+    c10::InferenceMode guard{true};
     std::random_device rd{};
     std::mt19937 gen{rd()};
     double score = 0.0;
     for (int j = 0; j < n; j++) {
-        Tensor z = tensor(1.0, TensorOptions().dtype(torch::kFloat64));
+        Tensor z = tensor(1.0);
         auto model = Foo(z, 0);
         auto trace = model.simulate(gen, parameters, SimulateOptions());
         score += trace->score();
@@ -118,11 +142,13 @@ void do_simulate(int idx, int n, std::vector<double>& scores, EmptyModule& param
 }
 
 void do_generate(int idx, int n, std::vector<double>& scores, const ChoiceTrie& constraints, EmptyModule& parameters) {
+    c10::InferenceMode guard{true};
     std::random_device rd{};
     std::mt19937 gen{rd()};
     double total_log_weight = 0.0;
     for (int j = 0; j < n; j++) {
-        Tensor z = tensor(1.0, TensorOptions().dtype(torch::kFloat64));
+        Tensor z = tensor(1.0);
+        assert(z.is_inference());
         auto model = Foo(z, 0);
         auto [trace, log_weight] = model.generate(gen, parameters, constraints, GenerateOptions());
         total_log_weight += log_weight;
@@ -152,6 +178,7 @@ TEST_CASE("multithreaded_simulate", "[multithreading, dml]") {
 
 
 TEST_CASE("multithreaded_generate", "[multithreading, dml]") {
+    c10::InferenceMode guard{true};
     EmptyModule parameters;
     ChoiceTrie constraints {};
     constraints.set_value({"z2"}, tensor(1.0));
@@ -192,6 +219,7 @@ public:
 };
 
 TEST_CASE("gradients with no parameters", "[gradients, dml]") {
+    c10::InferenceMode guard{true};
     EmptyModule parameters;
     GradientAccumulator accum {parameters};
     std::random_device rd{};
@@ -222,6 +250,7 @@ namespace gen::tests::dml {
 struct ParametersTestCalleeModule : public gen::Parameters {
     Tensor theta1;
     ParametersTestCalleeModule() {
+        c10::InferenceMode guard{false};
         theta1 = register_parameter("theta1", tensor(1.0));
     }
 };
@@ -243,6 +272,7 @@ struct ParametersTestCallerModule : public gen::Parameters {
     Tensor theta2;
     shared_ptr<ParametersTestCalleeModule> callee_params {nullptr};
     ParametersTestCallerModule() {
+        c10::InferenceMode guard{false};
         theta2 = register_parameter("theta2", tensor(3.0));
         callee_params = register_gen_module("callee_params", std::make_shared<ParametersTestCalleeModule>());
     }
@@ -263,6 +293,7 @@ public:
 }
 
 TEST_CASE("parameter gradients and generative function calls", "[dml]") {
+    c10::InferenceMode guard{true};
 
     gen::tests::dml::ParametersTestCallerModule parameters;
     auto x = tensor(4.0);
@@ -302,6 +333,7 @@ namespace gen::tests::dml {
     struct ParametersTestTorchCallerModule : public gen::Parameters {
         torch::nn::Linear linear {nullptr};
         ParametersTestTorchCallerModule() {
+            c10::InferenceMode guard{false};
             linear = register_torch_module("linear", torch::nn::Linear(3, 2));
         }
     };
@@ -321,6 +353,7 @@ namespace gen::tests::dml {
 }
 
 TEST_CASE("parameter gradients and torch modules", "[dml]") {
+    c10::InferenceMode guard{true};
 
     gen::tests::dml::ParametersTestTorchCallerModule parameters;
     auto x = tensor({1.0, 2.0, 3.0});
@@ -358,6 +391,7 @@ void simulate_and_gradients(int n, gen::tests::dml::ParametersTestCallerModule& 
 }
 
 TEST_CASE("multithreaded simulate and gradients", "[dml, parameters, multithreaded]") {
+    c10::InferenceMode guard{true};
 
     gen::tests::dml::ParametersTestCallerModule parameters;
     torch::optim::SGD sgd {parameters.all_parameters(), torch::optim::SGDOptions(0.1)};

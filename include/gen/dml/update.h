@@ -3,7 +3,7 @@
 
 namespace gen::dml {
 
-static void update_pre_visit(Trie<SubtraceRecord>& trie, bool save) {
+void update_pre_visit(Trie<SubtraceRecord>& trie, bool save) {
     // recursively walk the trie and mark all existing records
     for (auto& [key, subtrie] : trie.subtries()) {
         if (subtrie.has_value()) {
@@ -21,15 +21,30 @@ static void update_pre_visit(Trie<SubtraceRecord>& trie, bool save) {
     }
 }
 
-// TODO write visitor code for use during call()
+[[nodiscard]] bool has_subtrace(const Trie<SubtraceRecord>& trie, const Address& address) {
+    return trie.get_subtrie(address).has_value();
+}
 
-static void update_post_visit(Trie<SubtraceRecord>& trie, bool save) {
+[[nodiscard]] SubtraceRecord& get_subtrace_record(const Trie<SubtraceRecord>& trie, const Address& address) {
+    return trie.get_subtrie(address).get_value();
+}
+
+double update_post_visit(Trie<SubtraceRecord>& trie, bool save, ChoiceTrie& backward_constraints) {
+    double unvisited_score = 0.0;
     // recursively walk the trie
     auto& subtries_map = trie.subtries();
     for (auto it = subtries_map.begin(); it != subtries_map.end();) {
         auto& [address, subtrie] = *it;
+        assert(!subtrie.empty());
         if (subtrie.has_value()) {
             auto record = subtrie.get_value();
+
+            // if the subtrace was_active, but is not now active, then it contributes to backward_constraints
+            const ChoiceTrie& backward_constraints_subtrie = record.subtrace->choices();
+            if (!backward_constraints_subtrie.empty())
+                backward_constraints.set_subtrie(address, backward_constraints_subtrie);
+            unvisited_score += record.subtrace->score();
+
             if (!record.is_active && !record.save) {
 
                 // destruct records that are inactive and not marked as saved
@@ -41,17 +56,18 @@ static void update_post_visit(Trie<SubtraceRecord>& trie, bool save) {
                     assert(record.save);
                     record.revert_on_restore = true;
                 }
-
                 it++;
             }
         } else {
-            assert(!subtrie.empty());
-            update_post_visit(subtrie, save);
+            ChoiceTrie backward_constraints_subtrie;
+            unvisited_score += update_post_visit(subtrie, save, backward_constraints_subtrie);
+            backward_constraints.set_subtrie(address, std::move(backward_subtrie));
         }
     }
+    return unvisited_score;
 }
 
-static void revert_visit(Trie<SubtraceRecord>& trie) {
+void revert_visit(Trie<SubtraceRecord>& trie) {
     auto& subtries = trie.subtries();
     for (auto it = subtries.begin(); it != subtries.end();) {
         auto& [address, subtrie] = *it;
@@ -101,7 +117,6 @@ class DMLUpdateTracer {
     parameters_type& parameters_;
     std::unique_ptr<ChoiceTrie> backward_constraints_;
     bool save_;
-    // TODO log_weight needs subtraction of removed traces
 
 public:
     typedef typename Model::args_type args_type;
@@ -109,7 +124,6 @@ public:
     typedef DMLTrace<Model> trace_type;
 
     explicit DMLUpdateTracer(RNG& rng,
-                             const Model* gen_fn_with_args,
                              parameters_type& parameters,
                              const ChoiceTrie& constraints,
                              trace_type& trace,
@@ -126,40 +140,20 @@ public:
         assert(!(prepare_for_gradients && c10::InferenceMode::is_enabled()));
     }
 
-    const args_type &get_args() const { return trace_->get_args(); }
-
-    double add_unvisited(const Trie <std::unique_ptr<Trace>> &subtraces, ChoiceTrie &backward_constraints) {
-        // TODO recursively visit subtraces and backward_constraints, and add
-        // backward traces for unvisited subtraces to backward_constraints_
-        double unvisited_score = 0.0;
-        for (const auto&[address, subtraces_subtrie]: subtraces.subtries()) {
-            assert(!subtraces_subtrie.empty());
-            if (!backward_constraints.has_subtrie(address)) {
-                if (subtraces_subtrie.has_value()) {
-                    auto subtrace = subtraces_subtrie.get_value();
-                    backward_constraints.set_subtrie(address, subtrace->choices());
-                    unvisited_score += subtrace->score();
-                } else {
-                    ChoiceTrie backward_subtrie;
-                    unvisited_score += add_unvisited(subtraces_subtrie, backward_subtrie);
-                    backward_constraints.set_subtrie(address, std::move(backward_subtrie));
-                }
-            }
-        }
-        return unvisited_score;
-    }
+    const args_type& get_args() const { return trace_->get_args(); }
 
     template<typename CalleeType, typename CalleeParametersType>
     typename CalleeType::return_type
-    call(Address &&address, CalleeType&& gen_fn_with_args, CalleeParametersType &parameters) {
+    call(Address&& address, CalleeType&& gen_fn_with_args, CalleeParametersType& parameters) {
         typedef typename CalleeType::args_type callee_args_type;
         typedef typename CalleeType::trace_type callee_trace_type;
         typedef typename CalleeType::return_type callee_return_type;
         assert(!finished_); // if this assertion fails, it is a bug in DML not user code
         ChoiceTrie sub_constraints{constraints_.get_subtrie(address, false)};
-        callee_trace_type *subtrace = nullptr;
-        if (trace_.has_subtrace(address)) {
-            auto& record = prev_trace_.get_subtrace_record(address);
+
+        callee_trace_type* subtrace = nullptr;
+        if (has_subtrace(trace_->subtraces_, address)) {
+            auto& record = get_subtrace_record(trace_->subtraces_, address);
                 // do an in-place generate update call
             log_weight += record.subtrace->update(
                     rng_, gentl::change::UnknownChange(gen_fn_with_args), sub_constraints,
@@ -176,6 +170,8 @@ public:
             log_weight_ += log_weight_increment;
             subtrace = &add_subtrace(address, subrace_ptr);
         }
+
+
         const callee_return_type &value = subtrace->return_value();
         if (prepare_for_gradients_) {
             return trace_->make_tracked_return_value(*subtrace, gen_fn_with_args.get_args(), value);
@@ -194,8 +190,7 @@ public:
 
     finish(typename Model::return_type value) {
         assert(!(prepare_for_gradients_ && c10::InferenceMode::is_enabled()));
-        log_weight_ += add_unvisited(prev_trace_->subtraces_, *backward_constraints_); // mutates backward_constraints_
-        backward_constraints_->remove_empty_subtries();
+        log_weight_ -= update_post_visit(trace_.subtraces_, _save, *backward_constraints_);
         finished_ = true;
         trace_->set_value(value);
         trace_->set_backward_constraints(std::move(backward_constraints_));
@@ -231,13 +226,12 @@ double DMLTrace<Model>::update(
 
     DMLUpdateTracer<RNG, Model> tracer{
             rng,
-            gen_fn_with_args_.get(),
             parameters_,
             constraints,
             *this,
             options.precompute_gradient(),
             false, options.save()};
-    auto value = data_->gen_fn_with_args.forward(tracer);
+    auto value = gen_fn_with_args_.forward(tracer);
     return tracer.finish(value);
 }
 
@@ -259,7 +253,7 @@ void DMLTrace<Model>::set_backward_constraints(std::unique_ptr<ChoiceTrie> &&bac
 }
 
 template <typename Model>
-const ChoiceTrie& DMLTrace<Model>::backward_constraints() {
+const ChoiceTrie& DMLTrace<Model>::backward_constraints() const {
     return *backward_constraints_;
 }
 
