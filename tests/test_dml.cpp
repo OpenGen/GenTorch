@@ -55,26 +55,15 @@ enum FooAddrs {
 class Foo : public DMLGenFn<Foo, std::pair<Tensor,int>, Tensor, EmptyModule> {
 public:
     explicit Foo(Tensor z, int depth) : DMLGenFn<M,A,R,P>({z, depth}) {}
+    // NOTE: the default copy constructor does not call the copy constructor of the base class..
+    Foo(const Foo& other) : DMLGenFn(other) {}
     template <typename Tracer>
     return_type forward(Tracer& tracer) const {
         auto& parameters = tracer.get_parameters();
         const auto& args = tracer.get_args();
-        const auto& z_ = args.first;
-        const auto& depth_ = args.second;
         const auto& [z, depth] = tracer.get_args();
         auto x = tensor(0.0);
-        if (tracer.prepare_for_gradients()) {
-            assert(!c10::InferenceMode::is_enabled());
-            assert(!x.is_inference());
-            assert(!z_.is_inference());
-            assert(!tensor(1.0).is_inference());
-        } else {
-            assert(c10::InferenceMode::is_enabled());
-            assert(x.is_inference());
-            assert(z_.is_inference());
-            assert(tensor(1.0).is_inference());
-        }
-        auto y = tensor(1.0) + z_ + x; // TODO was + z + x
+        auto y = tensor(1.0) + z + x;
         auto a = tensor(0.0);
         auto z1 = tracer.call({"z1"}, Normal(a, tensor(1.0)));
         auto z2 = tracer.call({"z2"}, Normal(z1, tensor(0.1)));
@@ -90,9 +79,51 @@ public:
 };
 
 TEST_CASE("update", "[dml]") {
+    c10::InferenceMode guard{true};
 
-    // TODO
+    std::random_device rd{};
+    std::mt19937 rng{rd()};
+    EmptyModule parameters;
+    Foo model {tensor(1.0), 0};
 
+    // obtain initial trace with a recursive call
+    ChoiceTrie constraints1 {};
+    constraints1.set_value({"z1"}, tensor(-1.0));
+    constraints1.set_value({"z2"}, tensor(2.0));
+    constraints1.set_value({"recursive", "z1"}, tensor(1.0));
+    constraints1.set_value({"recursive", "z2"}, tensor(3.0));
+    auto [trace, generate_log_weight] = model.generate(rng, parameters, constraints1,
+                                                       GenerateOptions().precompute_gradient(false));
+    std::cout << "choices before update: " << std::endl;
+    std::cout << trace->choices() << std::endl;
+
+    // no change to the model, just a change to the choices that removes the recursive call
+    ChoiceTrie constraints2 {};
+    constraints2.set_value({"z1"}, tensor(1.0)); // this causes the recursive call to not be made
+    double update_log_weight = trace->update(rng, gentl::change::UnknownChange<Foo>(model), constraints2,
+                                            UpdateOptions().save(true));
+    ChoiceTrie choices = trace->choices();
+    std::cout << "choices after update: " << std::endl;
+    std::cout << choices << std::endl;
+    REQUIRE(choices.get_subtrie({"z1"}).has_value());
+    REQUIRE(choices.get_subtrie({"z2"}).has_value());
+    REQUIRE(!choices.has_subtrie({"recursive"}));
+
+    const ChoiceTrie& backward_constraints = trace->backward_constraints();
+    std::cout << "backward coinstraints: " << std::endl;
+    std::cout <<backward_constraints << std::endl;
+    REQUIRE(backward_constraints.get_subtrie({"z1"}).has_value());
+    REQUIRE(!backward_constraints.has_subtrie({"z2"}));
+    REQUIRE(backward_constraints.get_subtrie({"recursive", "z1"}).has_value());
+    REQUIRE(backward_constraints.get_subtrie({"recursive", "z2"}).has_value());
+
+    // revert it
+    trace->revert();
+    ChoiceTrie choices_after_reversion = trace->choices();
+    REQUIRE(choices_after_reversion.get_subtrie({"z1"}).has_value());
+    REQUIRE(choices_after_reversion.get_subtrie({"z2"}).has_value());
+    REQUIRE(choices_after_reversion.get_subtrie({"recursive", "z1"}).has_value());
+    REQUIRE(choices_after_reversion.get_subtrie({"recursive", "z2"}).has_value());
 
 }
 

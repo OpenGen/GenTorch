@@ -36,10 +36,15 @@ public:
     typedef typename GenFnType::args_type args_type;
     typedef typename GenFnType::dist_type dist_type;
 
-    PrimitiveTrace(return_type &&value, const dist_type &dist) : value_{value}, dist_{dist}, score_{0.0} {}
+    PrimitiveTrace(return_type &&value, const dist_type &dist) :
+            value_{std::make_unique<return_type>(value)},
+            value_alternate_{std::make_unique<return_type>(value)},
+            dist_{std::make_unique<dist_type>(dist)},
+            dist_alternate_{std::make_unique<dist_type>(dist)},
+            score_{0.0} {}
 
     [[nodiscard]] const return_type& return_value() const {
-        return value_;
+        return *value_;
     }
 
     [[nodiscard]] args_type parameter_gradient(
@@ -48,7 +53,7 @@ public:
     }
 
     [[nodiscard]] args_type parameter_gradient(GradientAccumulator& accumulator, double scaler) {
-        auto grads = dist_.log_density_gradient(value_);
+        auto grads = dist_->log_density_gradient(*value_);
         return GenFnType::extract_argument_gradient(grads);
     }
 
@@ -58,24 +63,61 @@ public:
 
     [[nodiscard]] ChoiceTrie choices() const override {
         ChoiceTrie trie{};
-        trie.set_value(value_);
+        trie.set_value(*value_);
         return trie; // copy elision
     }
 
-//    std::tuple<double,const ChoiceTrie&,
-    // TODO update
-    // TODO it requires a retdiff type..
-    // (we could add that later.)
+    template<typename RNG>
+    double update(RNG& rng, const gentl::change::UnknownChange<GenFnType>& change,
+                  const ChoiceTrie& constraints, const UpdateOptions& options) {
+        const GenFnType& new_gen_fn = change.new_value();
+        double log_weight;
+        if (constraints.has_value()) {
+            backward_constraints_.set_value(*value_);
+            if (options.save()) {
+                std::swap(value_, value_alternate_);
+                std::swap(dist_, dist_alternate_);
+                std::swap(score_, score_alternate_);
+            }
+            *value_ = std::any_cast<return_type>(constraints.get_value());
+            *dist_ = new_gen_fn.dist_;
+            double prev_score = score_;
+            score_ = dist_->log_density(*value_);
+            log_weight = score_ - prev_score;
+        } else if (constraints.empty()) {
+            log_weight = 0.0;
+            backward_constraints_.clear();
+        } else {
+            throw std::domain_error("expected primitive or empty choice dict");
+        }
+        return log_weight;
+    }
+
+    [[nodiscard]] const ChoiceTrie& backward_constraints() const {
+        return backward_constraints_;
+    }
+
+    void revert() override {
+        // TODO check that we are revertible
+        std::swap(value_, value_alternate_);
+        std::swap(dist_, dist_alternate_);
+        std::swap(score_, score_alternate_);
+    }
 
 
 private:
-    const return_type value_;
-    const dist_type dist_;
+    std::unique_ptr<return_type> value_;
+    std::unique_ptr<return_type> value_alternate_;
+    std::unique_ptr<dist_type> dist_;
+    std::unique_ptr<dist_type> dist_alternate_;
+    ChoiceTrie backward_constraints_;
     double score_;
+    double score_alternate_;
 };
 
 template <typename Derived, typename ArgsType, typename ReturnType, typename DistType>
 class PrimitiveGenFn {
+    friend class PrimitiveTrace<Derived>;
 public:
 
     // for generative function interface
@@ -97,6 +139,7 @@ public:
         // to set InferenceMode in their inference (and learning) program.
     }
 
+    // TODO where is this needed?
     [[nodiscard]] args_type get_args() const {
         return args_tracked_;
     }

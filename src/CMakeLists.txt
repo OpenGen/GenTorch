@@ -7,7 +7,7 @@ set(HEADER_LIST
         "${GenTorch_SOURCE_DIR}/include/gen/still/sgd.h"
         "${GenTorch_SOURCE_DIR}/include/gen/still/mcmc.h"
         "${GenTorch_SOURCE_DIR}/include/gen/trace.h"
-        "${GenTorch_SOURCE_DIR}/include/gen/dml.h"
+        "${GenTorch_SOURCE_DIR}/include/gen/dml/dml.h"
         "${GenTorch_SOURCE_DIR}/include/gen/distributions/distributions.h"
         "${GenTorch_SOURCE_DIR}/include/gen/distributions/normal.h"
         "${GenTorch_SOURCE_DIR}/include/gen/distributions/bernoulli.h"
@@ -20,6 +20,7 @@ add_library(gentorch_library
         distributions/normal.cpp
         distributions/bernoulli.cpp
         distributions/uniform_continuous.cpp
+        dml/update.cpp
         ${HEADER_LIST})
 
 target_include_directories(gentorch_library PUBLIC ../include ../third_party/gentl/include/)

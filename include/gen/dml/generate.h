@@ -88,7 +88,9 @@ std::pair<std::unique_ptr<DMLTrace<Model>>,double> DMLGenFn<Model, Args, Return,
         const ChoiceTrie& constraints,
         const GenerateOptions& options) {
     c10::InferenceMode guard{true};
-    DMLGenerateTracer<RNG, Model> tracer{rng, *static_cast<Model*>(this), parameters, constraints, options.precompute_gradient(),
+    const auto& derived = *static_cast<Model*>(this);
+    std::unique_ptr<Model> derived_copy = std::make_unique<Model>(derived);
+    DMLGenerateTracer<RNG, Model> tracer{rng, derived, parameters, constraints, options.precompute_gradient(),
                                          assert_retval_grad_};
     {
         c10::InferenceMode inner_guard{!options.precompute_gradient()};

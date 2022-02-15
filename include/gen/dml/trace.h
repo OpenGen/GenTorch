@@ -102,6 +102,8 @@ private:
 
     std::unique_ptr<Model> gen_fn_with_args_;
     std::unique_ptr<Model> gen_fn_with_args_alternate_ = nullptr;
+    std::unique_ptr<pair<const args_type&, std::unique_ptr<const args_type>>> args_;
+
 
     double score_ = 0.0;
     double score_alternate_;
@@ -112,7 +114,8 @@ private:
     bool prepared_for_gradients_;
     bool can_be_reverted_{false};
 
-    pair<const args_type&, std::unique_ptr<const args_type>> args_;
+
+    // for gradients
     std::unique_ptr<GradientHelper> helper_;
     parameters_type &parameters_;
     std::unique_ptr<Tensor> dummy_input_ = nullptr;
@@ -121,7 +124,7 @@ private:
 
 public:
 
-    // TODO make this private
+    // TODO make this private, possibly by making the tracers into nested classes
     explicit DMLTrace(const Model& gen_fn_with_args,
                       bool prepare_for_gradients, bool assert_retval_grad,
                       parameters_type &parameters) :
@@ -138,6 +141,11 @@ public:
             dummy_output_ = std::make_unique<Tensor>(torch::tensor(0.0));
             *dummy_output_ += *dummy_input_;
         }
+    }
+
+    // TODO remove this public function after making tracers into nested classes
+    Trie<SubtraceRecord>& get_subtraces() {
+        return subtraces_;
     }
 
     DMLTrace(const DMLTrace& other) = default;
@@ -180,16 +188,28 @@ public:
         return subtrace_ref;
     }
 
+    [[nodiscard]] bool has_subtrace(const Address& address) {
+        return subtraces_.get_subtrie(address).has_value();
+    }
+    [[nodiscard]] SubtraceRecord& get_subtrace_record(const Address& address) {
+        return subtraces_.get_subtrie(address).get_value();
+    }
+
+
     static ChoiceTrie get_choice_trie(const Trie<SubtraceRecord>& subtraces) {
         c10::InferenceMode guard{true};
         ChoiceTrie trie{};
         // TODO handle calls at the empty address properly
         for (const auto&[key, subtrie]: subtraces.subtries()) {
             if (subtrie.has_value()) {
-                trie.set_subtrie(Address{key}, subtrie.get_value().subtrace->choices());
+                const auto& record = subtrie.get_value();
+                if (record.is_active)
+                    trie.set_subtrie(Address{key}, record.subtrace->choices());
             } else if (subtrie.empty()) {
             } else {
-                trie.set_subtrie(Address{key}, get_choice_trie(subtrie));
+                ChoiceTrie choice_subtrie{get_choice_trie(subtrie)};
+                if (!choice_subtrie.empty())
+                    trie.set_subtrie(Address{key}, std::move(choice_subtrie));
             }
         }
         return trie; // copy elision
@@ -207,7 +227,7 @@ public:
     }
 
     const args_type& get_args() const {
-        return args_.first;
+        return args_->first;
     }
 
 
@@ -236,10 +256,10 @@ public:
 
     // update.h
     template<typename RNG>
-    double update(RNG &rng, gentl::change::UnknownChange<Model> &change,
-                  const ChoiceTrie &contraints, const UpdateOptions &options);
-    const ChoiceTrie &backward_constraints();
-    void revert();
+    double update(RNG &rng, const gentl::change::UnknownChange<Model> &change,
+                  const ChoiceTrie &constraints, const UpdateOptions &options);
+    const ChoiceTrie &backward_constraints() const;
+    void revert() override;
     void set_backward_constraints(std::unique_ptr<ChoiceTrie> &&backward_constraints);
 };
 

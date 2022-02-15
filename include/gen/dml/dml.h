@@ -34,8 +34,8 @@ class DMLSimulateTracer;
 template<typename RNG, typename Model>
 class DMLGenerateTracer;
 
-//template<typename RNG, typename Model>
-//class DMLUpdateTracer;
+template<typename RNG, typename Model>
+class DMLUpdateTracer;
 
 }
 
@@ -44,7 +44,7 @@ class DMLGenerateTracer;
 #include <gen/dml/trace.h>
 #include <gen/dml/simulate.h>
 #include <gen/dml/generate.h>
-//#include <gen/dml/update.h>
+#include <gen/dml/update.h>
 #include <gen/dml/parameter_gradient.h>
 //#include <gen/dml/choice_gradient.h>
 

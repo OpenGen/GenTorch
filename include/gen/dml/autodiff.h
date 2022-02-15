@@ -36,13 +36,13 @@ T detach_clone_and_track(const T &args) {
 }
 
 template<typename args_type>
-pair<const args_type&, unique_ptr<const args_type>> maybe_track_args(const args_type &args,
+std::unique_ptr<pair<const args_type&, unique_ptr<const args_type>>> maybe_track_args(const args_type &args,
                                                                       bool prepare_for_gradients) {
     if (prepare_for_gradients) {
         auto tracked_args_ptr = make_unique<const args_type>(detach_clone_and_track(args));
-        return {*tracked_args_ptr, std::move(tracked_args_ptr)};
+        return std::make_unique<pair<const args_type&, unique_ptr<const args_type>>>(*tracked_args_ptr, std::move(tracked_args_ptr));
     } else {
-        return {args, nullptr};
+        return std::make_unique<pair<const args_type&, unique_ptr<const args_type>>>(args, nullptr);
     }
 }
 

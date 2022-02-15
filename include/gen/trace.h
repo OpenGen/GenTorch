@@ -42,6 +42,7 @@ namespace gen {
          */
         [[nodiscard]] virtual double score() const = 0;
 
+        virtual void revert() = 0;
 
 //        /**
 //         * @return the return value of the generative function.
@@ -50,7 +51,6 @@ namespace gen {
 
 //        virtual std::any gradients(std::any retval_grad, double scaler, GradientAccumulator& accumulator) = 0;
 
-    // TODO - use new update / swap / fork interface
 
     };
 

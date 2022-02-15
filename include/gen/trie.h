@@ -146,6 +146,11 @@ namespace gen {
             return value_->value();
         }
 
+        void clear() {
+            value_->reset();
+            map_->clear();
+        }
+
         /**
          * Set the value at the given address to a copy of the given value, clearing any other value and any subtries if `overwrite` is `true`.
          * @tparam T
