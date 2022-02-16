@@ -86,7 +86,7 @@ namespace gen::examples::sgd {
     Tensor generate_z(std::mt19937 &rng) {
         static ProblemGenerator generator{};
         // NOTE this copies th the return value
-        return std::any_cast<Tensor>(generator.simulate(rng, empty_module, false).get_return_value());
+        return std::any_cast<Tensor>(generator.simulate(rng, empty_module, false).return_value());
     }
 
     typedef std::tuple<Tensor, Tensor, Tensor> datum_t;

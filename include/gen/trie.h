@@ -146,6 +146,11 @@ namespace gen {
             return value_->value();
         }
 
+        void clear() {
+            value_->reset();
+            map_->clear();
+        }
+
         /**
          * Set the value at the given address to a copy of the given value, clearing any other value and any subtries if `overwrite` is `true`.
          * @tparam T
@@ -172,7 +177,9 @@ namespace gen {
 
         void set_subtrie(const Address &address, Trie<ValueType> trie, bool overwrite = true);
 
-        [[nodiscard]] const unordered_map<string, Trie<ValueType>> &subtries() const { return *map_; }
+        // TODO return value is only a non-const reference because we need the empty iterator functionality of the map
+        [[nodiscard]] unordered_map<string, Trie<ValueType>> &subtries() const { return *map_; }
+
 
         template<typename T>
         friend std::ostream &operator<<(std::ostream &out, const Trie<T> &trie);
@@ -184,12 +191,20 @@ namespace gen {
         // if we restricted choices to be Tensor, then we could implement == (and approximate variants)
         // TODO: clone()
 
+        // TODO why are these not private?
+
+        void remove_empty_subtries();
+
+
     protected:
         shared_ptr<optional<ValueType>> value_{make_shared<optional<ValueType>>()};
         shared_ptr<unordered_map<string, Trie<ValueType>>> map_{make_shared<unordered_map<string, Trie<ValueType>>>()};
 
         std::ostream &pretty_print(std::ostream &out, int pre, const std::vector<int> &vert_bars,
                                    bool extra_space = false) const;
+    private:
+        void remove_empty_subtries(unordered_map<string, Trie<ValueType>>& map);
+
     };
 
 
@@ -242,6 +257,23 @@ namespace gen {
     }
 
     template<typename ValueType>
+    void Trie<ValueType>::remove_empty_subtries(unordered_map<string, Trie<ValueType>>& map) {
+        for (auto& [address, subtrie] : map) {
+            if (subtrie.empty())
+                map.erase(address);
+            else
+                remove_empty_subtries(subtrie);
+        }
+    }
+
+
+template<typename ValueType>
+void Trie<ValueType>::remove_empty_subtries() {
+    remove_empty_subtries(*map_);
+}
+
+
+template<typename ValueType>
     [[nodiscard]] Trie<ValueType> Trie<ValueType>::get_subtrie(const Address &address, bool strict) const {
         if (address.empty()) {
             return *this; // calls copy constructor, returns Trie with shared data

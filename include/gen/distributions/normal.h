@@ -38,6 +38,7 @@ namespace gen::distributions::normal {
     public:
 
         NormalDist(const Tensor& mean, const Tensor& std);
+        NormalDist& operator=(const NormalDist&) = default;
 
         template<class RNGType>
         Tensor sample(RNGType &rng) const {
@@ -50,8 +51,8 @@ namespace gen::distributions::normal {
         [[nodiscard]] std::tuple<Tensor, Tensor, Tensor> log_density_gradient(const Tensor &x) const;
 
     private:
-        const double mean_;
-        const double std_;
+        double mean_;
+        double std_;
     };
 
     /**

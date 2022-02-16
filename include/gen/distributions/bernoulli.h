@@ -33,6 +33,7 @@ namespace gen::distributions::bernoulli {
     public:
 
         BernoulliDist(const Tensor &prob_true);
+        BernoulliDist& operator=(const BernoulliDist&) = default;
 
         template<class RNGType>
         bool sample(RNGType &rng) const {
@@ -45,7 +46,7 @@ namespace gen::distributions::bernoulli {
         [[nodiscard]] Tensor log_density_gradient(bool x) const;
 
     private:
-        const double prob_true_;
+        double prob_true_;
     };
 
 /**

@@ -20,7 +20,7 @@ See the License for the specific language governing permissions and
 
 #include <torch/torch.h>
 
-#include <gen/dml.h>
+#include <gen/dml/dml.h>
 #include <gen/parameters.h>
 #include <gen/distributions/normal.h>
 #include <gen/utils/randutils.h>

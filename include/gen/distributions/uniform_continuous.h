@@ -33,6 +33,7 @@ namespace gen::distributions::uniform_continuous {
     public:
 
         UniformContinuousDist(const Tensor& min, const Tensor& max);
+        UniformContinuousDist& operator=(const UniformContinuousDist&) = default;
 
         template<class RNGType>
         Tensor sample(RNGType &rng) const {
@@ -44,8 +45,8 @@ namespace gen::distributions::uniform_continuous {
         [[nodiscard]] std::tuple<Tensor,Tensor,Tensor> log_density_gradient(const Tensor& x) const;
 
     private:
-        const double min_;
-        const double max_;
+        double min_;
+        double max_;
     };
 
 /**
