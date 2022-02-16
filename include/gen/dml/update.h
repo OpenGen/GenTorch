@@ -31,7 +31,7 @@ public:
                              parameters_type& parameters,
                              const ChoiceTrie& constraints,
                              trace_type& trace,
-                             bool prepare_for_gradients, bool assert_retval_grad, bool save) :
+                             bool prepare_for_gradients, bool save) :
             finished_(false),
             rng_{rng},
             trace_{trace},
@@ -153,7 +153,7 @@ double DMLTrace<Model>::update(
             constraints,
             *this,
             options.precompute_gradient(),
-            false, options.save()};
+            options.save()};
     update_pre_visit(subtraces_);
     {
         c10::InferenceMode inner_guard{!options.precompute_gradient()};
@@ -182,6 +182,12 @@ void DMLTrace<Model>::set_backward_constraints(std::unique_ptr<ChoiceTrie> &&bac
 template <typename Model>
 const ChoiceTrie& DMLTrace<Model>::backward_constraints() const {
     return *backward_constraints_;
+}
+
+template <typename Model>
+std::unique_ptr<Trace> DMLTrace<Model>::fork() {
+    // calls the private copy constructor
+    return std::unique_ptr<DMLTrace<Model>>(new DMLTrace<Model>(*this));
 }
 
 }

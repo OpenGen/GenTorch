@@ -163,6 +163,19 @@ void revert_visit(Trie<SubtraceRecord>& trie) {
     }
 }
 
-
+Trie<SubtraceRecord> copy_subtraces(const Trie<SubtraceRecord>& input) {
+    Trie<SubtraceRecord> output;
+    for (const auto& [key, input_subtrie] : input.subtries()) {
+        assert(!input_subtrie.empty());
+        if (input_subtrie.has_value()) {
+            const SubtraceRecord& input_record = input_subtrie.get_value();
+            // calls SubtraceRecord copy constructor, which fork()s subtrace
+            output.set_value(SubtraceRecord{input_record});
+        } else {
+            output.set_subtrie(Address{key}, copy_subtraces(input_subtrie));
+        }
+    }
+    return  output;
+}
 
 }

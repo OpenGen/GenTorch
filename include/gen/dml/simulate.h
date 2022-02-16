@@ -13,11 +13,11 @@ public:
     explicit DMLSimulateTracer(RNG& rng,
                                const Model& gen_fn_with_args,
                                parameters_type &parameters,
-                               bool prepare_for_gradients, bool assert_retval_grad) :
+                               bool prepare_for_gradients) :
             finished_(false),
             rng_{rng},
             trace_{std::make_unique<trace_type>(gen_fn_with_args, prepare_for_gradients,
-                                                assert_retval_grad, parameters)},
+                                                parameters)},
             prepare_for_gradients_{prepare_for_gradients},
             parameters_{parameters} {
     }
@@ -74,7 +74,7 @@ std::unique_ptr<DMLTrace<Model>> DMLGenFn<Model, Args, Return, Parameters>::simu
                                                                                      const SimulateOptions &options) {
     c10::InferenceMode guard{true};
     DMLSimulateTracer<RNG, Model> tracer{
-        rng, *static_cast<Model*>(this), parameters, options.precompute_gradient(), assert_retval_grad_};
+        rng, *static_cast<Model*>(this), parameters, options.precompute_gradient()};
     {
         c10::InferenceMode inner_guard{!options.precompute_gradient()};
         auto value = static_cast<Model*>(this)->forward(tracer);

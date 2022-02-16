@@ -44,6 +44,8 @@ namespace gen {
 
         virtual void revert() = 0;
 
+        virtual std::unique_ptr<Trace> fork() = 0;
+
 //        /**
 //         * @return the return value of the generative function.
 //         */

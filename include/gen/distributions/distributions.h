@@ -112,6 +112,13 @@ public:
         has_backward_constraints_ = false;
     }
 
+    std::unique_ptr<Trace> fork() {
+        // calls copy constructors for return_type and dist_type
+        auto trace = std::unique_ptr<PrimitiveTrace<GenFnType>>(
+                new PrimitiveTrace<GenFnType>(return_type{*this->value_}, *this->dist_));
+        trace->score_ = this->score_;
+        return std::move(trace);
+    }
 
 private:
     std::unique_ptr<return_type> value_;

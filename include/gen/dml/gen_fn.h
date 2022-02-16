@@ -27,7 +27,6 @@ template<typename Model, typename ArgsType, typename ReturnType, typename Parame
 class DMLGenFn {
 private:
     const ArgsType args_;
-    const bool assert_retval_grad_;
 public:
 
     // part of the generative function interface
@@ -42,15 +41,7 @@ public:
     typedef return_type R;
     typedef parameters_type P;
 
-    explicit DMLGenFn(ArgsType args, bool assert_retval_grad = false)
-            : args_(args), assert_retval_grad_(assert_retval_grad) {
-        // NOTE: if the user is constructing us within the body of a DML generative function, then
-        // we need inference mode to be disabled here. If there user is constructing us in their inference program
-        // then we would typically want inference mode to be enabled. For now, we trust that users remember
-        // to set InferenceMode in their inference (and learning) program.
-
-        // NOTE: the inference library can include checks that you are in inference mode
-    }
+    explicit DMLGenFn(ArgsType args) : args_(args) {}
     DMLGenFn(const DMLGenFn&) = default;
 
     const ArgsType& get_args() const {

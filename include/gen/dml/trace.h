@@ -114,8 +114,13 @@ struct SubtraceRecord {
             was_active{false},
             is_active{true},
             subtrace{std::move(subtrace_)} {}
+    SubtraceRecord(const SubtraceRecord& other) :
+            state{other.state}, was_active{other.was_active}, is_active{other.is_active},
+            subtrace{other.subtrace->fork()} { }
     SubtraceRecord(SubtraceRecord&& other) noexcept = default;
 };
+
+Trie<SubtraceRecord> copy_subtraces(const Trie<SubtraceRecord>& subtraces);
 
 
 /**
@@ -156,25 +161,41 @@ private:
     std::unique_ptr<Tensor> dummy_output_ = nullptr;
     std::unique_ptr<ChoiceTrie> backward_constraints_ = nullptr;
 
+    void initialize_dummy_tensors() {
+        // these values will only be used by gradient operations
+        c10::InferenceMode guard{false};
+        dummy_input_ = std::make_unique<Tensor>(torch::tensor(0.0, torch::TensorOptions().requires_grad(true)));
+        dummy_output_ = std::make_unique<Tensor>(torch::tensor(0.0));
+        *dummy_output_ += *dummy_input_;
+    }
+
+private:
+    // private copy constructor for use by fork()
+    DMLTrace(const DMLTrace& other) :
+            subtraces_{copy_subtraces(other.subtraces_)},
+            gen_fn_with_args_{std::make_unique<Model>(*other.gen_fn_with_args_)},
+            args_{maybe_track_args(gen_fn_with_args_->get_args(), false)},
+            maybe_value_{other.maybe_value_},
+            score_{other.score_},
+            prepared_for_gradients_{false},
+            can_be_reverted_{false},
+            helper_{std::make_unique<GradientHelper>()},
+            parameters_{other.parameters_} {
+        initialize_dummy_tensors();
+    }
+
 public:
 
     // TODO make this private, possibly by making the tracers into nested classes
     explicit DMLTrace(const Model& gen_fn_with_args,
-                      bool prepare_for_gradients, bool assert_retval_grad,
+                      bool prepare_for_gradients,
                       parameters_type &parameters) :
             gen_fn_with_args_{std::make_unique<Model>(gen_fn_with_args)},
             args_{maybe_track_args(gen_fn_with_args_->get_args(), prepare_for_gradients)},
             prepared_for_gradients_{prepare_for_gradients},
             parameters_{parameters},
             helper_{std::make_unique<GradientHelper>()} {
-        assert(c10::InferenceMode::is_enabled());
-        {
-            // these values will only be used by gradient operations
-            c10::InferenceMode guard{false};
-            dummy_input_ = std::make_unique<Tensor>(torch::tensor(0.0, torch::TensorOptions().requires_grad(true)));
-            dummy_output_ = std::make_unique<Tensor>(torch::tensor(0.0));
-            *dummy_output_ += *dummy_input_;
-        }
+        initialize_dummy_tensors();
     }
 
     // TODO remove this public function after making tracers into nested classes
@@ -182,7 +203,6 @@ public:
         return subtraces_;
     }
 
-    DMLTrace(const DMLTrace& other) = default;
     DMLTrace(DMLTrace&& other) noexcept = default;
     DMLTrace &operator=(const DMLTrace& other) = default;
     DMLTrace &operator=(DMLTrace&& other) noexcept = default;
@@ -285,6 +305,7 @@ public:
     const ChoiceTrie &backward_constraints() const;
     void revert() override;
     void set_backward_constraints(std::unique_ptr<ChoiceTrie> &&backward_constraints);
+    std::unique_ptr<Trace> fork();
 };
 
 }

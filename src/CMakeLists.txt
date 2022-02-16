@@ -19,7 +19,7 @@ add_library(gentorch_library
         distributions/bernoulli.cpp
         distributions/uniform_continuous.cpp
         dml/update.cpp
-        ${HEADER_LIST}) 
+        ${HEADER_LIST})
 
 target_include_directories(gentorch_library PUBLIC ../include ../third_party/gentl/include/)
 target_link_libraries(gentorch_library ${TORCH_LIBRARIES})

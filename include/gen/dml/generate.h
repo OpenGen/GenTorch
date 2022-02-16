@@ -15,11 +15,10 @@ public:
                                const Model& gen_fn_with_args,
                                parameters_type& parameters,
                                const ChoiceTrie& constraints,
-                               bool prepare_for_gradients, bool assert_retval_grad) :
+                               bool prepare_for_gradients) :
             finished_(false),
             rng_{rng},
-            trace_{std::make_unique<trace_type>(gen_fn_with_args, prepare_for_gradients,
-                                                assert_retval_grad, parameters)},
+            trace_{std::make_unique<trace_type>(gen_fn_with_args, prepare_for_gradients, parameters)},
             log_weight_(0.0),
             constraints_(constraints),
             prepare_for_gradients_{prepare_for_gradients},
@@ -90,8 +89,7 @@ std::pair<std::unique_ptr<DMLTrace<Model>>,double> DMLGenFn<Model, Args, Return,
     c10::InferenceMode guard{true};
     const auto& derived = *static_cast<Model*>(this);
     std::unique_ptr<Model> derived_copy = std::make_unique<Model>(derived);
-    DMLGenerateTracer<RNG, Model> tracer{rng, derived, parameters, constraints, options.precompute_gradient(),
-                                         assert_retval_grad_};
+    DMLGenerateTracer<RNG, Model> tracer{rng, derived, parameters, constraints, options.precompute_gradient()};
     {
         c10::InferenceMode inner_guard{!options.precompute_gradient()};
         auto value = static_cast<Model*>(this)->forward(tracer);
