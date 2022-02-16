@@ -3,7 +3,7 @@
 
 namespace gen::dml {
 
-void update_pre_visit(Trie<SubtraceRecord>& trie, bool save);
+void update_pre_visit(Trie<SubtraceRecord>& trie);
 [[nodiscard]] bool has_subtrace(const Trie<SubtraceRecord>& trie, const Address& address);
 [[nodiscard]] SubtraceRecord& get_subtrace_record(const Trie<SubtraceRecord>& trie, const Address& address);
 double update_post_visit(Trie<SubtraceRecord>& trie, bool save, ChoiceTrie& backward_constraints);
@@ -59,12 +59,33 @@ public:
         if (has_subtrace(trace_.get_subtraces(), address)) {
             auto& record = get_subtrace_record(trace_.get_subtraces(), address);
             subtrace = static_cast<callee_trace_type*>(record.subtrace.get());
+            record.is_active = true;
+            switch (record.state) {
+                case RecordState::Active:
+                    // ACTIVE ----- U -----> ACTIVE
+                    // ACTIVE ----- US ----> ACTIVE_SAVED
+                    record.state = (save_ ? RecordState::ActiveSaved : RecordState::Active);
+                    break;
+                case RecordState::ActiveSaved:
+                    // ACTIVE_SAVED ----- U ----> ACTIVE_SAVED
+                    // ACTIVE_SAVED ----- US ---> ACTIVE_SAVED
+                    break;
+                case RecordState::InactiveSaved:
+                    // INACTIVE_SAVED --- UR ---> ACTIVE_SAVED
+                    // INACTIVE_SAVED --- URS --> ACTIVE
+                    record.state = (save_ ? RecordState::Active : RecordState::ActiveSaved);
+                    break;
+                case RecordState::InactiveSavedRevert:
+                    // INACTIVE_SAVED_REVERT --- UR ---> ACTIVE_SAVED
+                    // INACTIVE_SAVED_REVERT --- URS --> ACTIVE
+                    record.state = (save_ ? RecordState::Active : RecordState::ActiveSaved);
+                    break;
+            }
             log_weight_ += subtrace->update(
                     rng_, gentl::change::UnknownChange(gen_fn_with_args), sub_constraints,
                     UpdateOptions().precompute_gradient(prepare_for_gradients_)
-                                   .save(save_)
+                                   .save((record.was_active && save_) || !record.was_active)
                                    .ignore_previous_choices(!record.was_active));
-            record.is_active = true;
             // TODO avoid copy of subtrace_backward by modifying set_subtrie interface to accept unique_ptr
             const ChoiceTrie& subtrace_backward = subtrace->backward_constraints();
             if (!subtrace_backward.empty())
@@ -73,6 +94,7 @@ public:
             auto [subtrace_ptr, log_weight_increment] = gen_fn_with_args.generate(
                     rng_, parameters, sub_constraints, GenerateOptions().precompute_gradient(prepare_for_gradients_));
             log_weight_ += log_weight_increment;
+            // This sets RecordState::Active, not RecordState::ActiveSaved, even if save=true
             subtrace = &trace_.add_subtrace(address, std::move(subtrace_ptr));
         }
 
@@ -132,7 +154,7 @@ double DMLTrace<Model>::update(
             *this,
             options.precompute_gradient(),
             false, options.save()};
-    update_pre_visit(subtraces_, options.save());
+    update_pre_visit(subtraces_);
     {
         c10::InferenceMode inner_guard{!options.precompute_gradient()};
         auto value = gen_fn_with_args_->forward(tracer);

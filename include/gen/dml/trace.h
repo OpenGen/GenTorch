@@ -72,14 +72,48 @@ private:
     const std::string msg_;
 };
 
+enum class RecordState {
+    Active,
+    ActiveSaved,
+    InactiveSaved,
+    InactiveSavedRevert // revert on restore
+};
+
+// transitions
+// update (U)
+// update save (US)
+// update that restores an inactive subtrace (UR)
+// update save that restores an inactive subtrace (URS)
+// update that removes an active subtrace (UM)
+// update save that removes an inactive subtrace (UMS)
+
+// ACTIVE ----- U -----> ACTIVE
+// ACTIVE ----- US ----> ACTIVE_SAVED
+// ACTIVE ----- UM ----> destruct
+// ACTIVE ----- UMS ---> INACTIVE_SAVED_REVERT
+// ACTIVE_SAVED ----- U ----> ACTIVE_SAVED
+// ACTIVE_SAVED ----- US ---> ACTIVE_SAVED
+// ACTIVE_SAVED ----- UM ---> INACTIVE_SAVED
+// ACTIVE_SAVED ----- UMS --> INACTIVE_SAVED_REVERT
+// INACTIVE_SAVED --- U ----> INACTIVE_SAVED
+// INACTIVE_SAVED --- US ---> destruct
+// INACTIVE_SAVED --- UR ---> ACTIVE_SAVED
+// INACTIVE_SAVED --- URS --> ACTIVE
+// INACTIVE_SAVED_REVERT --- U ----> INACTIVE_SAVED_REVERT
+// INACTIVE_SAVED_REVERT --- US ---> destruct
+// INACTIVE_SAVED_REVERT --- UR ---> ACTIVE_SAVED
+// INACTIVE_SAVED_REVERT --- URS --> ACTIVE
+
 struct SubtraceRecord {
-    bool was_active;
-    bool is_active;
-    bool save;
-    bool revert_on_restore;
+    RecordState state;
+    bool was_active; // uninitialized (set during pre-visit)
+    bool is_active; // uninitilized (set during call)
     std::unique_ptr<Trace> subtrace;
-    SubtraceRecord(bool active_, bool save_, std::unique_ptr<Trace>&& subtrace_) :
-            was_active{false}, is_active{active_}, save{save_}, revert_on_restore{false}, subtrace{std::move(subtrace_)} {}
+    SubtraceRecord(std::unique_ptr<Trace>&& subtrace_) :
+            state{RecordState::Active},
+            was_active{false},
+            is_active{true},
+            subtrace{std::move(subtrace_)} {}
     SubtraceRecord(SubtraceRecord&& other) noexcept = default;
 };
 
@@ -170,9 +204,7 @@ public:
         try {
             SubtraceType* subtrace_observer_ptr = subtrace_ptr.get();
             std::unique_ptr<Trace> subtrace_base_ptr = std::move(subtrace_ptr);
-            bool is_active_ = true;
-            bool save_ = false;
-            SubtraceRecord record{is_active_, save_, std::move(subtrace_base_ptr)};
+            SubtraceRecord record{std::move(subtrace_base_ptr)};
             subtraces.set_value(address, std::move(record), false);
             return {*subtrace_observer_ptr, subtrace_observer_ptr->score()};
         } catch (const TrieOverwriteError &) {
@@ -188,14 +220,6 @@ public:
         return subtrace_ref;
     }
 
-    [[nodiscard]] bool has_subtrace(const Address& address) {
-        return subtraces_.get_subtrie(address).has_value();
-    }
-    [[nodiscard]] SubtraceRecord& get_subtrace_record(const Address& address) {
-        return subtraces_.get_subtrie(address).get_value();
-    }
-
-
     static ChoiceTrie get_choice_trie(const Trie<SubtraceRecord>& subtraces) {
         c10::InferenceMode guard{true};
         ChoiceTrie trie{};
@@ -203,7 +227,7 @@ public:
         for (const auto&[key, subtrie]: subtraces.subtries()) {
             if (subtrie.has_value()) {
                 const auto& record = subtrie.get_value();
-                if (record.is_active)
+                if (record.state == RecordState::Active || record.state == RecordState::ActiveSaved)
                     trie.set_subtrie(Address{key}, record.subtrace->choices());
             } else if (subtrie.empty()) {
             } else {

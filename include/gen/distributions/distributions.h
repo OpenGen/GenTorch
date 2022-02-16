@@ -72,16 +72,18 @@ public:
                   const ChoiceTrie& constraints, const UpdateOptions& options) {
         const GenFnType& new_gen_fn = change.new_value();
         double log_weight;
+        const return_type& prev_value = *value_.get();
+        double prev_score = score_;
+        if (options.save()) {
+            std::swap(value_, value_alternate_);
+            std::swap(dist_, dist_alternate_);
+            std::swap(score_, score_alternate_);
+            can_be_reverted_ = true;
+        }
         if (constraints.has_value()) {
-            backward_constraints_.set_value(*value_);
-            if (options.save()) {
-                std::swap(value_, value_alternate_);
-                std::swap(dist_, dist_alternate_);
-                std::swap(score_, score_alternate_);
-            }
+            backward_constraints_.set_value(prev_value);
             *value_ = std::any_cast<return_type>(constraints.get_value());
             *dist_ = new_gen_fn.dist_;
-            double prev_score = score_;
             score_ = dist_->log_density(*value_);
             log_weight = score_ - prev_score;
         } else if (constraints.empty()) {
@@ -90,18 +92,24 @@ public:
         } else {
             throw std::domain_error("expected primitive or empty choice dict");
         }
+        has_backward_constraints_ = true;
         return log_weight;
     }
 
     [[nodiscard]] const ChoiceTrie& backward_constraints() const {
+        if (!has_backward_constraints_)
+            throw std::logic_error("there are no backward constraints; call update");
         return backward_constraints_;
     }
 
     void revert() override {
-        // TODO check that we are revertible
+        if (!can_be_reverted_)
+            throw std::logic_error("cannot be reverted; call update with save=true");
         std::swap(value_, value_alternate_);
         std::swap(dist_, dist_alternate_);
         std::swap(score_, score_alternate_);
+        can_be_reverted_ = false;
+        has_backward_constraints_ = false;
     }
 
 
@@ -113,6 +121,8 @@ private:
     ChoiceTrie backward_constraints_;
     double score_;
     double score_alternate_;
+    bool can_be_reverted_{false};
+    bool has_backward_constraints_{false};
 };
 
 template <typename Derived, typename ArgsType, typename ReturnType, typename DistType>

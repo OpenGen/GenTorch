@@ -17,27 +17,54 @@ See the License for the specific language governing permissions and
 
 namespace gen::dml {
 
+// transitions
+// update (U)
+// update save (US)
+// update that restores an inactive subtrace (UR)
+// update save that restores an inactive subtrace (URS)
+// update that removes an active subtrace (UM)
+// update save that removes an inactive subtrace (UMS)
+// revert (R)
 
-void update_pre_visit(Trie<SubtraceRecord>& trie, bool save) {
+// ACTIVE ----- U -----> ACTIVE                             [call (has_subtrace)]
+// ACTIVE ----- US ----> ACTIVE_SAVED                       [call (has_subtrace)]
+// ACTIVE ----- UM ----> destruct                           [update_post_visit]
+// ACTIVE ----- UMS ---> INACTIVE_SAVED                     [update_post_visit]            xxx
+// ACTIVE ------ R ----> destruct                           [revert_visit]
+// ACTIVE_SAVED ----- U ----> ACTIVE_SAVED                  [call (has_subtrace)]
+// ACTIVE_SAVED ----- US ---> ACTIVE_SAVED                  [call (has_subtrace)]
+// ACTIVE_SAVED ----- UM ---> INACTIVE_SAVED_REVERT         [update_post_visit]            xxx
+// ACTIVE_SAVED ----- UMS --> INACTIVE_SAVED                [update_post_visit]            xxx
+// ACTIVE_SAVED ----- R ----> ACTIVE (+ revert)             [revert_visit]
+// INACTIVE_SAVED --- U ----> INACTIVE_SAVED                [update_post_visit]
+// INACTIVE_SAVED --- US ---> destruct                      [update_post_visit]
+// INACTIVE_SAVED --- UR ---> ACTIVE_SAVED                  [call (has_subtrace)]
+// INACTIVE_SAVED --- URS --> ACTIVE                        [call (has_subtrace)]
+// INACTIVE_SAVED --- R ----> ACTIVE                        [revert_visit]
+// INACTIVE_SAVED_REVERT --- U ----> INACTIVE_SAVED_REVERT  [update_post_visit]
+// INACTIVE_SAVED_REVERT --- US ---> destruct               [update_post_visit]
+// INACTIVE_SAVED_REVERT --- UR ---> ACTIVE_SAVED           [call (has_subtrace)]
+// INACTIVE_SAVED_REVERT --- URS --> ACTIVE                 [call (has_subtrace)]
+// INACTIVE_SAVED_REVERT --- R ----> ACTIVE (+ revert)      [revert_visit]
+
+
+
+void update_pre_visit(Trie<SubtraceRecord>& trie) {
     // recursively walk the trie and mark all existing records
     for (auto& [key, subtrie] : trie.subtries()) {
         if (subtrie.has_value()) {
             auto& record = subtrie.get_value();
-            // if save, then all inactive records will be un-saved and all active records will be saved
-            // otherwise, we do not change the save status of records
-            if (save)
-                record.save = record.is_active;
-            record.was_active = record.is_active;
+            record.was_active = (record.state == RecordState::Active || record.state == RecordState::ActiveSaved);
             record.is_active = false;
         } else {
             assert(!subtrie.empty());
-            update_pre_visit(subtrie, save);
+            update_pre_visit(subtrie);
         }
     }
 }
 
 [[nodiscard]] bool has_subtrace(const Trie<SubtraceRecord>& trie, const Address& address) {
-    return trie.get_subtrie(address).has_value();
+    return trie.has_subtrie(address) && trie.get_subtrie(address).has_value();
 }
 
 [[nodiscard]] SubtraceRecord& get_subtrace_record(const Trie<SubtraceRecord>& trie, const Address& address) {
@@ -53,27 +80,42 @@ double update_post_visit(Trie<SubtraceRecord>& trie, bool save, ChoiceTrie& back
         const Address address{key};
         assert(!subtrie.empty());
         if (subtrie.has_value()) {
-            auto& record = subtrie.get_value();
-
-            // if the subtrace was_active, but is not now active, then it contributes to backward_constraints
-            if (record.was_active && !record.is_active) {
+            auto &record = subtrie.get_value();
+            bool removed = record.was_active && !record.is_active;
+            if (removed) {
                 const ChoiceTrie &backward_constraints_subtrie = record.subtrace->choices();
                 if (!backward_constraints_subtrie.empty())
                     backward_constraints.set_subtrie(address, backward_constraints_subtrie);
                 unvisited_score += record.subtrace->score();
-            }
-
-            if (!record.is_active && !record.save) {
-
-                // destruct records that are inactive and not marked as saved
-                it = subtries_map.erase(it);
-            } else {
-
-                // records that were already inactive and saved, and are not re-saved, should be reverted on restore
-                if (!save && record.was_active && !record.is_active) {
-                    assert(record.save);
-                    record.revert_on_restore = true;
+                if (record.state == RecordState::Active && !save) {
+                    // ACTIVE ----- UM ----> destruct
+                    it = subtries_map.erase(it);
+                } else if (record.state == RecordState::Active && save) {
+                    // ACTIVE ----- UMS ---> INACTIVE_SAVED
+                    record.state = RecordState::InactiveSaved;
+                    it++;
+                } else if (record.state == RecordState::ActiveSaved && !save) {
+                    // ACTIVE_SAVED ----- UM ---> INACTIVE_SAVED_REVERT
+                    record.state = RecordState::InactiveSavedRevert;
+                    it++;
+                } else if (record.state == RecordState::ActiveSaved && save) {
+                    // ACTIVE_SAVED ----- UMS --> INACTIVE_SAVED
+                    record.state = RecordState::InactiveSaved;
+                    it++;
+                } else {
+                    assert(false);
                 }
+            } else if (!record.is_active) {
+                if (!save) {
+                    // INACTIVE_SAVED --- U ----> INACTIVE_SAVED
+                    // INACTIVE_SAVED_REVERT --- U ----> INACTIVE_SAVED_REVERT
+                    it++;
+                } else {
+                    // INACTIVE_SAVED --- US ---> destruct
+                    // INACTIVE_SAVED_REVERT --- US ---> destruct
+                    it = subtries_map.erase(it);
+                }
+            } else {
                 it++;
             }
         } else {
@@ -81,6 +123,7 @@ double update_post_visit(Trie<SubtraceRecord>& trie, bool save, ChoiceTrie& back
             unvisited_score += update_post_visit(subtrie, save, backward_constraints_subtrie);
             if (!backward_constraints_subtrie.empty())
                 backward_constraints.set_subtrie(address, backward_constraints_subtrie);
+            it++;
         }
     }
     return unvisited_score;
@@ -93,34 +136,29 @@ void revert_visit(Trie<SubtraceRecord>& trie) {
         const Address address{key};
         if (subtrie.has_value()) {
             auto& record = subtrie.get_value();
-            if (record.save) {
-                // if it was already active it should be reverted
-                // if it was not already active, then it may need to be reverted, depending on revert_on_restore
-                if (record.is_active || record.revert_on_restore)
-                    record.subtrace->revert();
-
-                // anything that is marked as save should be marked as active
-                record.is_active = true;
-            }
-
-            if (!record.save) {
-
-                // anything that is not marked as saved should be destructed
+            if (record.state == RecordState::Active) {
+                // ACTIVE ------ R ----> destruct
                 it = subtries.erase(it);
+            } else if (record.state == RecordState::ActiveSaved) {
+                // ACTIVE_SAVED ----- R ----> ACTIVE (+ revert)
+                record.state = RecordState::Active;
+                record.subtrace->revert();
+                it++;
+            } else if (record.state == RecordState::InactiveSaved) {
+                // INACTIVE_SAVED --- R ----> ACTIVE
+                record.state = RecordState::Active;
+                it++;
             } else {
-
-                // anything that was marked as save will be unmarked
-                record.save = false;
-
-                // reset
-                record.revert_on_restore = false;
-
-                // continue
+                // INACTIVE_SAVED_REVERT --- R ----> ACTIVE (+ revert)
+                assert(record.state == RecordState::InactiveSavedRevert);
+                record.state = RecordState::Active;
+                record.subtrace->revert();
                 it++;
             }
         } else {
             assert(!subtrie.empty());
             revert_visit(subtrie);
+            it++;
         }
     }
 }
