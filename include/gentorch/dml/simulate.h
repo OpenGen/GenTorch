@@ -1,7 +1,22 @@
+/* Copyright 2021-2022 Massachusetts Institute of Technology
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+        https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+        limitations under the License.
+==============================================================================*/
+
 #ifndef GENTORCH_SIMULATE_H
 #define GENTORCH_SIMULATE_H
 
-namespace gen::dml {
+namespace gentorch::dml {
 
 template<typename RNG, typename Model>
 class DMLSimulateTracer {
@@ -46,7 +61,7 @@ public:
     template<typename CalleeType>
     typename CalleeType::return_type
     call(Address&& address, CalleeType&& gen_fn_with_args) {
-        return call(std::move(address), std::forward<CalleeType>(gen_fn_with_args), gen::empty_module_singleton);
+        return call(std::move(address), std::forward<CalleeType>(gen_fn_with_args), gentorch::empty_module_singleton);
     }
 
     std::unique_ptr <DMLTrace<Model>> finish(typename Model::return_type value) {
@@ -71,13 +86,13 @@ private:
 template<typename Model, typename Args, typename Return, typename Parameters>
 template<typename RNG>
 std::unique_ptr<DMLTrace<Model>> DMLGenFn<Model, Args, Return, Parameters>::simulate(RNG& rng, Parameters &parameters,
-                                                                                     const SimulateOptions &options) {
+                                                                                     const SimulateOptions &options) const {
     c10::InferenceMode guard{true};
     DMLSimulateTracer<RNG, Model> tracer{
-        rng, *static_cast<Model*>(this), parameters, options.precompute_gradient()};
+        rng, *static_cast<const Model*>(this), parameters, options.precompute_gradient()};
     {
         c10::InferenceMode inner_guard{!options.precompute_gradient()};
-        auto value = static_cast<Model*>(this)->forward(tracer);
+        auto value = static_cast<const Model*>(this)->forward(tracer);
         return tracer.finish(value);
     }
 }

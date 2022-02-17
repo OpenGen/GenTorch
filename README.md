@@ -56,3 +56,9 @@ To build documentation:
 ```shell
 cmake --build build --target docs
 ```
+
+## Roadmap
+
+[ ] Implement involutive MCMC
+[ ] Implement `choice_gradient`
+[ ] Implement arithmetic for `ChoiceTrie`s whose values are `Tensor`s (use `std::any_cast<Tensor>`)

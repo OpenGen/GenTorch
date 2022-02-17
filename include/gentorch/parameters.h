@@ -1,4 +1,4 @@
-/* Copyright 2021 The LibGen Authors
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,17 +13,17 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-#pragma once
+#ifndef GENTORCH_PARAMETERS_H
+#define GENTORCH_PARAMETERS_H
 
 #include <memory>
-
 #include <torch/torch.h>
 #include <torch/csrc/autograd/functions/utils.h>
 #include <torch/ordered_dict.h>
 
 using torch::Tensor;
 
-namespace gen {
+namespace gentorch {
 
 class Parameters;
 
@@ -109,3 +109,5 @@ class EmptyModule : public Parameters {};
 const EmptyModule empty_module_singleton {};
 
 }
+
+#endif // GENTORCH_PARAMETERS_H

@@ -1,15 +1,28 @@
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
-#include <gen/parameters.h>
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+        https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+        limitations under the License.
+==============================================================================*/
+
+#include <gentorch/parameters.h>
+#include <torch/torch.h>
 
 #include <memory>
 
-#include <torch/torch.h>
-
 using torch::Tensor;
 
-namespace gen {
+namespace gentorch {
 
-// gen::GradientAccumulator implementation
+// gentorch::GradientAccumulator implementation
 
 std::vector<Tensor>::const_iterator GradientAccumulator::begin(const Parameters& submodule) {
     auto [begin_idx, end_idx] = begin_end_idx_.at(&submodule); // TODO throw nice error if key is not found
@@ -47,7 +60,7 @@ GradientAccumulator::GradientAccumulator(const Parameters& module) {
 
 GradientAccumulator::GradientAccumulator(std::shared_ptr<Parameters> module_ptr) : GradientAccumulator{*module_ptr} {}
 
-// gen::Module implementation
+// gentorch::Module implementation
 
 Tensor& Parameters::register_parameter(std::string name, Tensor tensor, bool requires_grad) {
     // TODO add checks similar to register_parameter in

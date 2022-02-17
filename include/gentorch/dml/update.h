@@ -1,7 +1,22 @@
+/* Copyright 2021-2022 Massachusetts Institute of Technology
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+        https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+        limitations under the License.
+==============================================================================*/
+
 #ifndef GENTORCH_UPDATE_H
 #define GENTORCH_UPDATE_H
 
-namespace gen::dml {
+namespace gentorch::dml {
 
 void update_pre_visit(Trie<SubtraceRecord>& trie);
 [[nodiscard]] bool has_subtrace(const Trie<SubtraceRecord>& trie, const Address& address);
@@ -109,7 +124,7 @@ public:
 
     template<typename CalleeType>
     typename CalleeType::return_type call(Address &&address, CalleeType &&gen_fn_with_args) {
-        return call(std::move(address), std::forward<CalleeType>(gen_fn_with_args), gen::empty_module_singleton);
+        return call(std::move(address), std::forward<CalleeType>(gen_fn_with_args), gentorch::empty_module_singleton);
     }
 
     double finish(typename Model::return_type value) {
@@ -163,6 +178,17 @@ double DMLTrace<Model>::update(
 }
 
 template <typename Model>
+template <typename RNG>
+double DMLTrace<Model>::update(
+        RNG& rng,
+        const gentl::change::NoChange& change,
+        const ChoiceTrie& constraints,
+        const UpdateOptions& options) {
+    // TODO this copies the gen_fn_with_args unecessarily
+    return update(rng, gentl::change::UnknownChange<Model>(*gen_fn_with_args_), constraints, options);
+}
+
+template <typename Model>
 void DMLTrace<Model>::revert() {
     if (!can_be_reverted_)
         throw std::logic_error("trace can not be reverted");
@@ -185,7 +211,7 @@ const ChoiceTrie& DMLTrace<Model>::backward_constraints() const {
 }
 
 template <typename Model>
-std::unique_ptr<Trace> DMLTrace<Model>::fork() {
+std::unique_ptr<DMLTrace<Model>> DMLTrace<Model>::fork() {
     // calls the private copy constructor
     return std::unique_ptr<DMLTrace<Model>>(new DMLTrace<Model>(*this));
 }

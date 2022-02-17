@@ -1,4 +1,4 @@
-/* Copyright 2021 The LibGen Authors
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,21 +13,21 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-#pragma once
 
-#include <gen/trace.h>
-#include <gen/distributions/distributions.h>
+#ifndef GENTORCH_UNIFORM_CONTINUOUS_H
+#define GENTORCH_UNIFORM_CONTINUOUS_H
 
+#include <gentorch/trace.h>
+#include <gentorch/distributions/distributions.h>
 #include <random>
-
 #include <torch/torch.h>
 
-namespace gen::distributions::uniform_continuous {
+namespace gentorch::distributions::uniform_continuous {
 
     using torch::Tensor;
     using torch::tensor;
-    using gen::ChoiceTrie;
-    using gen::distributions::PrimitiveGenFn;
+    using gentorch::ChoiceTrie;
+    using gentorch::distributions::PrimitiveGenFn;
 
     class UniformContinuousDist {
     public:
@@ -63,3 +63,5 @@ namespace gen::distributions::uniform_continuous {
     };
 
 }
+
+#endif // GENTORCH_UNIFORM_CONTINUOUS_H

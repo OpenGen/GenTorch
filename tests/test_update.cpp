@@ -1,9 +1,23 @@
+/* Copyright 2021-2022 Massachusetts Institute of Technology
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+        https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+        limitations under the License.
+==============================================================================*/
 
 #include <catch2/catch.hpp>
-#include <gen/trie.h>
-#include <gen/dml/dml.h>
-#include <gen/distributions/bernoulli.h>
-#include <gen/conversions.h>
+#include <gentorch/trie.h>
+#include <gentorch/dml/dml.h>
+#include <gentorch/distributions/bernoulli.h>
+#include <gentorch/conversions.h>
 
 #include <sstream>
 
@@ -13,11 +27,11 @@ using torch::Tensor;
 using torch::TensorOptions;
 using torch::tensor;
 
-using gen::Nothing, gen::nothing;
-using gen::dml::DMLGenFn;
-using gen::distributions::bernoulli::Bernoulli;
-using gen::ChoiceTrie;
-using gen::EmptyModule;
+using gentorch::Nothing, gentorch::nothing;
+using gentorch::dml::DMLGenFn;
+using gentorch::distributions::bernoulli::Bernoulli;
+using gentorch::ChoiceTrie;
+using gentorch::EmptyModule;
 
 using gentl::SimulateOptions;
 using gentl::GenerateOptions;

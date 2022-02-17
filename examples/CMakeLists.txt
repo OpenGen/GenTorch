@@ -1,0 +1,8 @@
+add_executable(simple_monte_carlo simple_monte_carlo.cpp)
+target_link_libraries(simple_monte_carlo PRIVATE gentorch_library)
+
+add_executable(importance_sampling importance_sampling.cpp)
+target_link_libraries(importance_sampling PRIVATE gentorch_library)
+
+add_executable(sgd sgd.cpp)
+target_link_libraries(sgd PRIVATE gentorch_library)

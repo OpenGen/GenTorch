@@ -4,7 +4,7 @@ GenTorch is a probabilistic programming language embedded in C++, that uses the 
 GenTorch probabilistic programs can represent probabilistic **generative models** (including structured generative models and deep generative models) as well as **inference models** (including proposal distributions and amortized inference networks).
 
 ## Defining a probabilistic program
-Users write a GenTorch probabilistic program by defining a new class that derives from the gen::DMLGenFn class.
+Users write a GenTorch probabilistic program by defining a new class that derives from the gentorch::DMLGenFn class.
 
 ### Declaring the input type, return type, and parameter type
 As part of the declaration of your class, you indicate the **input type**, **return type**, and **parameter type** of your probabilistic program.
@@ -45,18 +45,18 @@ The functions are:
 
 ## Basic types:
 
-- gen::Address
+- gentorch::Address
 
-- gen::Trie
+- gentorch::Trie
 
-- gen::Module
+- gentorch::Module
 
-- gen::Trace
+- gentorch::Trace
 
-- gen::GradientAccumulator
+- gentorch::GradientAccumulator
 
 Types of generative functions:
 
-- gen::dml::DMLGenFn
+- gentorch::dml::DMLGenFn
 
-- gen::distributions::normal::Normal
+- gentorch::distributions::normal::Normal

@@ -1,4 +1,4 @@
-/* Copyright 2021 The LibGen Authors
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,20 +13,19 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-#pragma once
+#ifndef GENTORCH_NORMAL_H
+#define GENTORCH_NORMAL_H
 
-#include <gen/trace.h>
-#include <gen/distributions/distributions.h>
-
+#include <gentorch/trace.h>
+#include <gentorch/distributions/distributions.h>
 #include <random>
-
 #include <torch/torch.h>
 
-namespace gen::distributions::normal {
+namespace gentorch::distributions::normal {
 
     using torch::Tensor;
     using torch::tensor;
-    using gen::distributions::PrimitiveGenFn;
+    using gentorch::distributions::PrimitiveGenFn;
 
     const double pi = 3.141592653589793238462643383279502884;
     const double sqrt_2_pi = std::sqrt(2.0 * pi);
@@ -70,3 +69,5 @@ namespace gen::distributions::normal {
     };
 
 }
+
+#endif // GENTORCH_NORMAL_H

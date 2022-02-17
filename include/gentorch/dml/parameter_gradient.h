@@ -1,4 +1,4 @@
-/* Copyright 2021 The LibGen Authors
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,11 +16,11 @@ See the License for the specific language governing permissions and
 #ifndef GENTORCH_PARAMETER_GRADIENT_H
 #define GENTORCH_PARAMETER_GRADIENT_H
 
-#include <gen/address.h>
-#include <gen/trie.h>
-#include <gen/conversions.h>
-#include <gen/trace.h>
-#include <gen/parameters.h>
+#include <gentorch/address.h>
+#include <gentorch/trie.h>
+#include <gentorch/conversions.h>
+#include <gentorch/trace.h>
+#include <gentorch/parameters.h>
 
 #include <gentl/concepts.h>
 #include <gentl/types.h>
@@ -50,9 +50,9 @@ using torch::autograd::Node;
 using torch::autograd::VariableInfo;
 using torch::autograd::edge_list;
 
-using gen::GradientAccumulator;
+using gentorch::GradientAccumulator;
 
-namespace gen::dml {
+namespace gentorch::dml {
 
 
 

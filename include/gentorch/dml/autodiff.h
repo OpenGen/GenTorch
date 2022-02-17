@@ -1,3 +1,18 @@
+/* Copyright 2021-2022 Massachusetts Institute of Technology
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+        https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+        limitations under the License.
+==============================================================================*/
+
 #ifndef GENTORCH_AUTODIFF_H
 #define GENTORCH_AUTODIFF_H
 
@@ -7,8 +22,8 @@
 
 #include <torch/torch.h>
 
-#include <gen/conversions.h>
-#include <gen/parameters.h>
+#include <gentorch/conversions.h>
+#include <gentorch/parameters.h>
 
 using std::vector;
 using std::pair;
@@ -20,9 +35,9 @@ using torch::autograd::variable_list;
 using torch::autograd::edge_list;
 using torch::autograd::Node;
 
-using gen::GradientAccumulator;
+using gentorch::GradientAccumulator;
 
-namespace gen::dml {
+namespace gentorch::dml {
 
 template<typename T>
 T detach_clone_and_track(const T &args) {

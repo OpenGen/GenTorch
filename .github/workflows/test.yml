@@ -48,3 +48,8 @@ jobs:
     - name: Test
       run: cmake --build ${{github.workspace}}/build --target test
     
+    - name: Run Examples
+      run: |
+        ${{github.workspace}}/build/examples/simple_monte_carlo 10 10 10
+        ${{github.workspace}}/build/examples/importance_sampling 10 10 10
+        ${{github.workspace}}/build/examples/sgd 10 10 10 10

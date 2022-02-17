@@ -1,4 +1,4 @@
-/* Copyright 2021 The LibGen Authors
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,9 +13,11 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-#pragma once
+#ifndef GENTORCH_TRIE_H
+#define GENTORCH_TRIE_H
 
-#include <gen/address.h>
+#include <gentorch/address.h>
+#include <torch/torch.h>
 
 #include <stdexcept>
 #include <any>
@@ -25,8 +27,6 @@ See the License for the specific language governing permissions and
 #include <sstream>
 #include <unordered_map>
 
-#include <torch/torch.h>
-
 using std::shared_ptr;
 using std::make_shared;
 using std::unique_ptr;
@@ -35,9 +35,9 @@ using std::optional;
 using std::string;
 using std::unordered_map;
 using torch::Tensor;
-using gen::Address;
+using gentorch::Address;
 
-namespace gen {
+namespace gentorch {
 
     class TrieKeyError : public std::exception {
     public:
@@ -162,12 +162,14 @@ namespace gen {
             if (address.empty()) {
                 return set_value(std::move(value), overwrite);
             } else {
+                // TODO this is non-optimized
                 Trie subtrie = get_subtrie(address, false);
                 if (!overwrite && !subtrie.empty()) {
                     throw TrieOverwriteError(address);
                 }
-                set_subtrie(address, subtrie);
-                return subtrie.set_value(std::move(value));
+                subtrie.set_value(std::move(value));
+                set_subtrie(address, std::move(subtrie));
+                return get_value(address);
             }
         }
 
@@ -445,3 +447,5 @@ template<typename ValueType>
     }
 
 }
+
+#endif // GENTORCH_TRIE_H

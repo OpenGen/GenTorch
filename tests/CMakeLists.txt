@@ -8,14 +8,15 @@ FetchContent_MakeAvailable(Catch2)
 
 # Tests need to be added as executables first
 add_executable(testlib
-        dml/update.cpp
-        test_seed_sequence.cpp
         test_address.cpp
         test_parameters.cpp
         test_trie.cpp
         test_conversions.cpp
         test_dml.cpp
-        test_sgd.cpp)
+        test_update.cpp
+        test_sgd.cpp
+        test_mcmc.cpp
+        test_particle_filter.cpp)
 
 # I'm using C++17 in the test
 target_compile_features(testlib PRIVATE cxx_std_17)

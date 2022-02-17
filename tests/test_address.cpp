@@ -1,4 +1,4 @@
-/* Copyright 2021 The LibGen Authors
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@ See the License for the specific language governing permissions and
 #define CATCH_CONFIG_MAIN
 
 #include <catch2/catch.hpp>
-#include <gen/address.h>
-#include <gen/trie.h>
+#include <gentorch/address.h>
+#include <gentorch/trie.h>
 
 #include <cassert>
 #include <iostream>

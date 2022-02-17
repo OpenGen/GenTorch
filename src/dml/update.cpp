@@ -1,4 +1,4 @@
-/* Copyright 2021 The LibGen Authors
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,9 +13,9 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-#include <gen/dml/dml.h>
+#include <gentorch/dml/dml.h>
 
-namespace gen::dml {
+namespace gentorch::dml {
 
 // transitions
 // update (U)
@@ -170,7 +170,7 @@ Trie<SubtraceRecord> copy_subtraces(const Trie<SubtraceRecord>& input) {
         if (input_subtrie.has_value()) {
             const SubtraceRecord& input_record = input_subtrie.get_value();
             // calls SubtraceRecord copy constructor, which fork()s subtrace
-            output.set_value(SubtraceRecord{input_record});
+            output.set_value(Address{key}, SubtraceRecord{input_record});
         } else {
             output.set_subtrie(Address{key}, copy_subtraces(input_subtrie));
         }

@@ -1,4 +1,4 @@
-/* Copyright 2021 The LibGen Authors
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 ==============================================================================*/
 
 #include <catch2/catch.hpp>
-#include <gen/conversions.h>
+#include <gentorch/conversions.h>
 
 #include <cassert>
 
@@ -24,8 +24,8 @@ using std::vector, std::pair;
 using torch::Tensor;
 using torch::TensorOptions;
 using torch::tensor;
-using gen::unroll;
-using gen::roll;
+using gentorch::unroll;
+using gentorch::roll;
 
 TEST_CASE("Tensor", "[conversion]") {
 

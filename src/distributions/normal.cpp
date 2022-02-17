@@ -1,4 +1,4 @@
-/* Copyright 2021 The LibGen Authors
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,12 +14,12 @@ See the License for the specific language governing permissions and
 ==============================================================================*/
 
 #include <torch/torch.h>
-#include <gen/distributions/normal.h>
+#include <gentorch/distributions/normal.h>
 
 using torch::Tensor;
 using torch::tensor;
 
-namespace gen::distributions::normal {
+namespace gentorch::distributions::normal {
 
     // logic
 
@@ -43,11 +43,11 @@ namespace gen::distributions::normal {
         std_{*std.data_ptr<float>()} {}
 
     [[nodiscard]] double NormalDist::log_density(const Tensor& x) const {
-        return gen::distributions::normal::log_density(mean_, std_, *x.data_ptr<float>());
+        return gentorch::distributions::normal::log_density(mean_, std_, *x.data_ptr<float>());
     }
 
     [[nodiscard]] std::tuple<Tensor, Tensor, Tensor> NormalDist::log_density_gradient(const Tensor& x) const {
-        auto grad = gen::distributions::normal::log_density_gradient(mean_, std_, *x.data_ptr<float>());
+        auto grad = gentorch::distributions::normal::log_density_gradient(mean_, std_, *x.data_ptr<float>());
         return {tensor(std::get<0>(grad)), tensor(std::get<1>(grad)), tensor(std::get<2>(grad))};
     }
 

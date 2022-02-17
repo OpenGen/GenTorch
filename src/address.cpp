@@ -1,4 +1,4 @@
-/* Copyright 2021 The LibGen Authors
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,14 +13,14 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-#include <gen/address.h>
+#include <gentorch/address.h>
 
 #include <optional>
 #include <memory>
 #include <initializer_list>
 #include <iostream>
 
-namespace gen {
+namespace gentorch {
 
     Address::Address(std::initializer_list<std::string>::const_iterator begin,
                      std::initializer_list<std::string>::const_iterator end) {

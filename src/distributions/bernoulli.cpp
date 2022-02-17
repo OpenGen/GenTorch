@@ -1,4 +1,4 @@
-/* Copyright 2021 The LibGen Authors
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -15,9 +15,9 @@ See the License for the specific language governing permissions and
 
 #include <cmath>
 
-#include <gen/distributions/bernoulli.h>
+#include <gentorch/distributions/bernoulli.h>
 
-namespace gen::distributions::bernoulli {
+namespace gentorch::distributions::bernoulli {
 
     BernoulliDist::BernoulliDist(const Tensor& prob_true) : prob_true_{*prob_true.data_ptr<float>()} {}
 

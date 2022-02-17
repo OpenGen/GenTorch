@@ -1,4 +1,4 @@
-/* Copyright 2021 The LibGen Authors
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,13 +13,13 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-#pragma once
+#ifndef GENTORCH_DISTRIBUTIONS_H
+#define GENTORCH_DISTRIBUTIONS_H
 
-#include <gen/trace.h>
+#include <gentorch/trace.h>
+#include <gentorch/distributions/distributions.h>
 #include <random>
-
 #include <torch/torch.h>
-
 #include <gentl/concepts.h>
 #include <gentl/types.h>
 
@@ -27,7 +27,7 @@ using gentl::SimulateOptions;
 using gentl::GenerateOptions;
 using gentl::UpdateOptions;
 
-namespace gen::distributions {
+namespace gentorch::distributions {
 
 template<typename GenFnType>
 class PrimitiveTrace : public Trace {
@@ -41,7 +41,7 @@ public:
             value_alternate_{std::make_unique<return_type>(value)},
             dist_{std::make_unique<dist_type>(dist)},
             dist_alternate_{std::make_unique<dist_type>(dist)},
-            score_{0.0} {}
+            score_{dist_->log_density(*value_)} {}
 
     [[nodiscard]] const return_type& return_value() const {
         return *value_;
@@ -112,12 +112,16 @@ public:
         has_backward_constraints_ = false;
     }
 
-    std::unique_ptr<Trace> fork() {
+    std::unique_ptr<PrimitiveTrace<GenFnType>> fork() {
         // calls copy constructors for return_type and dist_type
         auto trace = std::unique_ptr<PrimitiveTrace<GenFnType>>(
                 new PrimitiveTrace<GenFnType>(return_type{*this->value_}, *this->dist_));
         trace->score_ = this->score_;
         return std::move(trace);
+    }
+
+    std::unique_ptr<Trace> fork_type_erased() override {
+        return fork();
     }
 
 private:
@@ -186,6 +190,23 @@ public:
         return {std::make_unique<trace_type>(std::move(value), dist_), log_weight};
     }
 
+    template<class RNGType>
+    std::pair<return_type, double>
+    assess(RNGType &rng, const EmptyModule& parameters, const ChoiceTrie& constraints) const {
+        return_type value;
+        double log_weight;
+        if (constraints.has_value()) {
+            value = std::any_cast<return_type>(constraints.get_value());
+            log_weight = dist_.log_density(value);
+        } else if (constraints.empty()) {
+            value = dist_.sample(rng);
+            log_weight = 0.0;
+        } else {
+            throw std::domain_error("expected primitive or empty choice dict");
+        }
+        return {std::move(value), log_weight};
+    }
+
 
 private:
     args_type args_tracked_;
@@ -194,3 +215,5 @@ private:
 };
 
 }
+
+#endif // GENTORCH_DISTRIBUTIONS_H

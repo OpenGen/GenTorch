@@ -1,23 +1,24 @@
 #include <torch/torch.h>
 
-#include <gen/address.h>
-#include <gen/dml.h>
-#include <gen/parameters.h>
-#include <gen/distributions/normal.h>
-#include <gen/utils/randutils.h>
-#include <gen/still/sgd.h>
-#include <gen/conversions.h>
+#include <gentorch/address.h>
+#include <gentorch/dml/dml.h>
+#include <gentorch/parameters.h>
+#include <gentorch/distributions/normal.h>
+#include <gentorch/conversions.h>
 
+#include <gentl/types.h>
+#include <gentl/learning/supervised.h>
+#include <gentl/util/randutils.h>
 
 using torch::Tensor, torch::tensor;
 using std::vector, std::cout, std::endl;
-using gen::dml::DMLGenFn;
-using gen::EmptyModule;
-using gen::distributions::normal::Normal;
-using randutils::seed_seq_fe128;
+using gentorch::dml::DMLGenFn;
+using gentorch::EmptyModule;
+using gentorch::distributions::normal::Normal;
+using gentl::randutils::seed_seq_fe128;
 
 
-namespace gen::examples::sgd {
+namespace gentorch::examples::sgd {
 
     EmptyModule empty_module{};
 
@@ -35,7 +36,7 @@ namespace gen::examples::sgd {
         }
     };
 
-    struct ModelModule : public gen::Parameters {
+    struct ModelModule : public gentorch::Parameters {
         torch::nn::Linear fc1{nullptr};
         torch::nn::Linear fc2{nullptr};
 
@@ -86,7 +87,7 @@ namespace gen::examples::sgd {
     Tensor generate_z(std::mt19937 &rng) {
         static ProblemGenerator generator{};
         // NOTE this copies th the return value
-        return std::any_cast<Tensor>(generator.simulate(rng, empty_module, false).return_value());
+        return std::any_cast<Tensor>(generator.simulate(rng, empty_module, gentl::SimulateOptions())->return_value());
     }
 
     typedef std::tuple<Tensor, Tensor, Tensor> datum_t;
@@ -98,8 +99,8 @@ namespace gen::examples::sgd {
         for (size_t i = 0; i < n; i++) {
             Tensor z = generate_z(rng);
             GroundTruth model{z};
-            auto ground_truth_trace = model.simulate(rng, empty_module, false);
-            ChoiceTrie choices = ground_truth_trace.get_choice_trie();
+            auto ground_truth_trace = model.simulate(rng, empty_module, gentl::SimulateOptions());
+            ChoiceTrie choices = ground_truth_trace->choices();
             auto x = std::any_cast<Tensor>(choices.get_value({"x"}));
             auto y = std::any_cast<Tensor>(choices.get_value({"y"}));
             data.emplace_back(std::make_tuple(x, y, z));
@@ -111,7 +112,7 @@ namespace gen::examples::sgd {
 
 int main(int argc, char* argv[]) {
 
-    using namespace gen::examples::sgd;
+    using namespace gentorch::examples::sgd;
     torch::set_num_interop_threads(1);
     torch::set_num_threads(1);
     c10::InferenceMode guard {true};
@@ -141,19 +142,19 @@ int main(int argc, char* argv[]) {
     seed_seq_fe128 seed_seq{rd()};
     std::mt19937 rng(seed_seq);
 
-    auto unpack_datum_ground_truth = [](const datum_t &datum) -> std::pair<GroundTruth, gen::ChoiceTrie> {
+    auto unpack_datum_ground_truth = [](const datum_t &datum) -> std::pair<GroundTruth, gentorch::ChoiceTrie> {
         const auto& [x, y, z] = datum;
         GroundTruth model{z};
-        gen::ChoiceTrie constraints;
+        gentorch::ChoiceTrie constraints;
         constraints.set_value({"x"}, x);
         constraints.set_value({"y"}, y);
         return {model, constraints};
     };
 
-    auto unpack_datum = [](const datum_t &datum) -> std::pair<Model, gen::ChoiceTrie> {
+    auto unpack_datum = [](const datum_t &datum) -> std::pair<Model, gentorch::ChoiceTrie> {
         const auto& [x, y, z] = datum;
         Model model{z};
-        gen::ChoiceTrie constraints;
+        gentorch::ChoiceTrie constraints;
         constraints.set_value({"x"}, x);
         constraints.set_value({"y"}, y);
         return {model, constraints};
@@ -163,14 +164,14 @@ int main(int argc, char* argv[]) {
     auto data = generate_training_data(rng, num_train);
 
     // evaluate the ground truth as a baseline
-    double ground_truth_objective = gen::sgd::estimate_objective(rng, empty_module, data, unpack_datum_ground_truth);
+    double ground_truth_objective = gentl::sgd::estimate_objective(rng, empty_module, data, unpack_datum_ground_truth);
     std::cout << "ground truth parameters objective: " << ground_truth_objective << std::endl;
 
     // initialize random model parameters
     ModelModule parameters {};
 
     auto evaluate = [&parameters,&data,&unpack_datum,&rng](size_t iter) -> double {
-        double objective = gen::sgd::estimate_objective(rng, parameters, data, unpack_datum);
+        double objective = gentl::sgd::estimate_objective(rng, parameters, data, unpack_datum);
         std::cout << "iter " << iter << "; objective: " << objective << std::endl;
         return objective;
     };
@@ -194,5 +195,5 @@ int main(int argc, char* argv[]) {
 
     cout << "doing multi-threaded training" << endl;
     evaluate(iter++);
-    gen::sgd::train_supervised(parameters, callback, data, unpack_datum, minibatch_size, num_threads, seed_seq);
+    gentl::sgd::train_supervised(parameters, callback, data, unpack_datum, minibatch_size, num_threads, seed_seq);
 }

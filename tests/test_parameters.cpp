@@ -1,4 +1,4 @@
-/* Copyright 2021 The LibGen Authors
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 ==============================================================================*/
 
 #include <catch2/catch.hpp>
-#include <gen/parameters.h>
+#include <gentorch/parameters.h>
 
 #include <cassert>
 #include <memory>
@@ -24,7 +24,7 @@ See the License for the specific language governing permissions and
 
 class BarModule;
 
-struct FooModule : public gen::Parameters {
+struct FooModule : public gentorch::Parameters {
 
     FooModule(int64_t n, int64_t m) {
         a = register_parameter("a", torch::randn({n, m}));
@@ -41,7 +41,7 @@ struct FooModule : public gen::Parameters {
     std::shared_ptr<BarModule> bar {nullptr};
 };
 
-struct BarModule : public gen::Parameters {
+struct BarModule : public gentorch::Parameters {
 
     BarModule(int64_t n, int64_t m) {
         b = register_parameter("b", torch::randn({n, m}));
@@ -102,8 +102,8 @@ TEST_CASE("parameters", "[Module]") {
     REQUIRE(same_data(bar_all[5], foo->layer1->bias));
     
     torch::optim::SGD sgd {foo->all_parameters(), torch::optim::SGDOptions{0.01}};
-    gen::GradientAccumulator accum1 {foo};
-    gen::GradientAccumulator accum2 {foo};
+    gentorch::GradientAccumulator accum1 {foo};
+    gentorch::GradientAccumulator accum2 {foo};
     accum1.update_module_gradients();
     accum2.update_module_gradients();
     sgd.step();

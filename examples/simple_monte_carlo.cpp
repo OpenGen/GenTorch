@@ -1,18 +1,19 @@
 #include <torch/torch.h>
-#include <gen/address.h>
-#include <gen/dml.h>
-#include <gen/parameters.h>
-#include <gen/distributions/uniform_continuous.h>
-#include <gen/utils/randutils.h>
+#include <gentorch/address.h>
+#include <gentorch/dml/dml.h>
+#include <gentorch/parameters.h>
+#include <gentorch/distributions/uniform_continuous.h>
+#include <gentl/types.h>
+#include <gentl/util/randutils.h>
 
-using randutils::seed_seq_fe128;
+using gentl::randutils::seed_seq_fe128;
 using torch::Tensor, torch::tensor;
 using std::vector, std::cout, std::endl;
-using gen::dml::DMLGenFn;
-using gen::EmptyModule;
-using gen::distributions::uniform_continuous::UniformContinuous;
+using gentorch::dml::DMLGenFn;
+using gentorch::EmptyModule;
+using gentorch::distributions::uniform_continuous::UniformContinuous;
 
-namespace gen::examples::simple_monte_carlo {
+namespace gentorch::examples::simple_monte_carlo {
 
     typedef std::nullptr_t Nothing;
     constexpr Nothing nothing = nullptr;
@@ -35,8 +36,8 @@ namespace gen::examples::simple_monte_carlo {
         auto model = Model();
         size_t num_inside_circle = 0;
         for (size_t i = 0; i < num_samples; i++) {
-            auto trace = model.simulate(rng, parameters, false);
-            const Tensor& retval = trace.return_value();
+            auto trace = model.simulate(rng, parameters, gentl::SimulateOptions());
+            const Tensor& retval = trace->return_value();
             float radius = *retval.data_ptr<float>();
             if (radius < 1.0) {
                 num_inside_circle++;
@@ -92,6 +93,6 @@ int main(int argc, char* argv[]) {
     cout << "num_threads: " << num_threads << endl;
     cout << "num_samples_per_thread: " << num_samples_per_thread << endl;
     cout << "seed: " << seed << endl;
-    double result = gen::examples::simple_monte_carlo::estimate(num_threads, num_samples_per_thread, seed);
+    double result = gentorch::examples::simple_monte_carlo::estimate(num_threads, num_samples_per_thread, seed);
     cout << "result: " << result << endl;
 }

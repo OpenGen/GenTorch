@@ -1,4 +1,4 @@
-/* Copyright 2021 The LibGen Authors
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,25 +20,25 @@ See the License for the specific language governing permissions and
 
 #include <torch/torch.h>
 
-#include <gen/dml/dml.h>
-#include <gen/parameters.h>
-#include <gen/distributions/normal.h>
-#include <gen/utils/randutils.h>
-#include <gen/conversions.h> // TODO we may need to rename this to 'types'
+#include <gentorch/dml/dml.h>
+#include <gentorch/parameters.h>
+#include <gentorch/distributions/normal.h>
+#include <gentorch/conversions.h>
 
+#include <gentl/util/randutils.h>
 #include <gentl/learning/supervised.h>
 
-using randutils::seed_seq_fe128;
+using gentl::randutils::seed_seq_fe128;
 using torch::Tensor, torch::tensor;
 using std::vector;
 
-using gen::dml::DMLGenFn;
-using gen::EmptyModule;
-using gen::distributions::normal::Normal;
-using gen::Nothing, gen::nothing;
+using gentorch::dml::DMLGenFn;
+using gentorch::EmptyModule;
+using gentorch::distributions::normal::Normal;
+using gentorch::Nothing, gentorch::nothing;
 using std::cout, std::endl;
 
-struct ModelModule : public gen::Parameters {
+struct ModelModule : public gentorch::Parameters {
     Tensor a;
     Tensor b;
     ModelModule() {
@@ -71,10 +71,10 @@ typedef Tensor datum_t;
 TEST_CASE("multi-threaded matches single-threaded", "[sgd]") {
 
 
-    auto unpack_datum = [](const datum_t &datum) -> std::pair<Model, gen::ChoiceTrie> {
+    auto unpack_datum = [](const datum_t &datum) -> std::pair<Model, gentorch::ChoiceTrie> {
         const auto& x = datum;
         Model model{};
-        gen::ChoiceTrie constraints;
+        gentorch::ChoiceTrie constraints;
         constraints.set_value({"x"}, x);
         return {model, constraints};
     };
@@ -149,7 +149,7 @@ TEST_CASE("multi-threaded matches single-threaded", "[sgd]") {
 
 }
 
-struct SimpleOptimizationModelModule : public gen::Parameters {
+struct SimpleOptimizationModelModule : public gentorch::Parameters {
     Tensor mean;
     SimpleOptimizationModelModule() {
         c10::InferenceMode guard{false};
@@ -177,9 +177,9 @@ struct SimpleOptimizationModel : public DMLGenFn<SimpleOptimizationModel, Nothin
 TEST_CASE("simple optimization problem", "[sgd]") {
 
 
-    auto unpack_datum = [](const Tensor& x) -> std::pair<SimpleOptimizationModel, gen::ChoiceTrie> {
+    auto unpack_datum = [](const Tensor& x) -> std::pair<SimpleOptimizationModel, gentorch::ChoiceTrie> {
         SimpleOptimizationModel model;
-        gen::ChoiceTrie constraints;
+        gentorch::ChoiceTrie constraints;
         constraints.set_value({"x"}, x);
         return {model, constraints};
     };
@@ -191,12 +191,12 @@ TEST_CASE("simple optimization problem", "[sgd]") {
     for (size_t i = 0; i < 50; i++) {
         double x = 1.0;
         data.emplace_back(tensor(x));
-        expected_objective_optimum += gen::distributions::normal::log_density(opt_mean, 1.0, x);
+        expected_objective_optimum += gentorch::distributions::normal::log_density(opt_mean, 1.0, x);
     }
     for (size_t i = 0; i < 50; i++) {
         double x = 3.0;
         data.emplace_back(tensor(x));
-        expected_objective_optimum += gen::distributions::normal::log_density(opt_mean, 1.0, x);
+        expected_objective_optimum += gentorch::distributions::normal::log_density(opt_mean, 1.0, x);
     }
     expected_objective_optimum /= static_cast<double>(data.size());
 

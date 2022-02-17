@@ -1,4 +1,4 @@
-/* Copyright 2021 The LibGen Authors
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,21 +13,20 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-#pragma once
+#ifndef GENTORCH_BERNOULLI_H
+#define GENTORCH_BERNOULLI_H
 
-#include <gen/trace.h>
-#include <gen/distributions/distributions.h>
-
+#include <gentorch/trace.h>
+#include <gentorch/distributions/distributions.h>
 #include <random>
-
 #include <torch/torch.h>
 
-namespace gen::distributions::bernoulli {
+namespace gentorch::distributions::bernoulli {
 
     using torch::Tensor;
     using torch::tensor;
-    using gen::ChoiceTrie;
-    using gen::distributions::PrimitiveGenFn;
+    using gentorch::ChoiceTrie;
+    using gentorch::distributions::PrimitiveGenFn;
 
     class BernoulliDist {
     public:
@@ -65,3 +64,5 @@ namespace gen::distributions::bernoulli {
     };
 
 }
+
+#endif // GENTORCH_BERNOULLI_H

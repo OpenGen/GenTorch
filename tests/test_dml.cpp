@@ -1,4 +1,4 @@
-/* Copyright 2021 The LibGen Authors
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@ See the License for the specific language governing permissions and
 ==============================================================================*/
 
 #include <catch2/catch.hpp>
-#include <gen/trie.h>
-#include <gen/dml/dml.h>
-#include <gen/distributions/normal.h>
+#include <gentorch/trie.h>
+#include <gentorch/dml/dml.h>
+#include <gentorch/distributions/normal.h>
 
 #include <gentl/types.h>
 
@@ -30,17 +30,17 @@ using torch::Tensor;
 using torch::TensorOptions;
 using torch::tensor;
 
-using gen::dml::DMLGenFn;
-using gen::distributions::normal::Normal;
-using gen::distributions::normal::NormalDist;
-using gen::ChoiceTrie;
-using gen::EmptyModule;
+using gentorch::dml::DMLGenFn;
+using gentorch::distributions::normal::Normal;
+using gentorch::distributions::normal::NormalDist;
+using gentorch::ChoiceTrie;
+using gentorch::EmptyModule;
 
 using gentl::SimulateOptions;
 using gentl::GenerateOptions;
 using gentl::UpdateOptions;
 
-namespace gen::test::dml {
+namespace gentorch::test::dml {
 
 bool tensor_scalar_bool(Tensor a) {
     if (a.ndimension() != 0) {
@@ -81,7 +81,7 @@ public:
 }
 
 TEST_CASE("update", "[dml]") {
-    using gen::test::dml::Foo;
+    using gentorch::test::dml::Foo;
     c10::InferenceMode guard{true};
 
     std::random_device rd{};
@@ -131,7 +131,7 @@ TEST_CASE("update", "[dml]") {
 }
 
 TEST_CASE("simulate", "[dml]") {
-    using gen::test::dml::Foo;
+    using gentorch::test::dml::Foo;
     c10::InferenceMode guard{true};
     EmptyModule parameters;
     Foo model {tensor(1.0), 0};
@@ -144,7 +144,7 @@ TEST_CASE("simulate", "[dml]") {
 }
 
 TEST_CASE("generate", "[dml]") {
-    using gen::test::dml::Foo;
+    using gentorch::test::dml::Foo;
     c10::InferenceMode guard{true};
     EmptyModule parameters;
     Foo model {tensor(1.0), 0};
@@ -164,7 +164,7 @@ TEST_CASE("generate", "[dml]") {
 }
 
 void do_simulate(int idx, int n, std::vector<double>& scores, EmptyModule& parameters) {
-    using gen::test::dml::Foo;
+    using gentorch::test::dml::Foo;
     c10::InferenceMode guard{true};
     std::random_device rd{};
     std::mt19937 gen{rd()};
@@ -179,7 +179,7 @@ void do_simulate(int idx, int n, std::vector<double>& scores, EmptyModule& param
 }
 
 void do_generate(int idx, int n, std::vector<double>& scores, const ChoiceTrie& constraints, EmptyModule& parameters) {
-    using gen::test::dml::Foo;
+    using gentorch::test::dml::Foo;
     c10::InferenceMode guard{true};
     std::random_device rd{};
     std::mt19937 gen{rd()};
@@ -283,9 +283,9 @@ TEST_CASE("gradients with no parameters", "[gradients, dml]") {
 // *** parameter gradients and generative function calls ***
 // *********************************************************
 
-namespace gen::tests::dml {
+namespace gentorch::tests::dml {
 
-struct ParametersTestCalleeModule : public gen::Parameters {
+struct ParametersTestCalleeModule : public gentorch::Parameters {
     Tensor theta1;
     ParametersTestCalleeModule() {
         c10::InferenceMode guard{false};
@@ -297,7 +297,7 @@ class ParametersTestCallee : public DMLGenFn<ParametersTestCallee, Tensor, Tenso
 public:
     explicit ParametersTestCallee(Tensor x) : DMLGenFn<M,A,R,P>{x} {}
     template <typename T>
-    return_type forward(T& tracer) {
+    return_type forward(T& tracer) const {
         auto& parameters = tracer.get_parameters();
         const auto& x = tracer.get_args();
         auto mu = x + parameters.theta1;
@@ -306,7 +306,7 @@ public:
     }
 };
 
-struct ParametersTestCallerModule : public gen::Parameters {
+struct ParametersTestCallerModule : public gentorch::Parameters {
     Tensor theta2;
     shared_ptr<ParametersTestCalleeModule> callee_params {nullptr};
     ParametersTestCallerModule() {
@@ -320,7 +320,7 @@ class ParametersTestCaller : public DMLGenFn<ParametersTestCaller, Tensor, Tenso
 public:
     explicit ParametersTestCaller(Tensor x) : DMLGenFn<M,A,R,P>{x} {}
     template <typename T>
-    return_type forward(T& tracer) {
+    return_type forward(T& tracer) const {
         auto& parameters = tracer.get_parameters();
         const auto& x = tracer.get_args();
         auto z = tracer.call({"callee_addr"}, ParametersTestCallee(x), *parameters.callee_params);
@@ -333,7 +333,7 @@ public:
 TEST_CASE("parameter gradients and generative function calls", "[dml]") {
     c10::InferenceMode guard{true};
 
-    gen::tests::dml::ParametersTestCallerModule parameters;
+    gentorch::tests::dml::ParametersTestCallerModule parameters;
     auto x = tensor(4.0);
     auto z1 = tensor(5.0);
     auto retval_grad = tensor(6.0);
@@ -347,7 +347,7 @@ TEST_CASE("parameter gradients and generative function calls", "[dml]") {
 
     // compute actual gradients with respect to theta1 and theta2
     GradientAccumulator accum {parameters};
-    gen::tests::dml::ParametersTestCaller model {x};
+    gentorch::tests::dml::ParametersTestCaller model {x};
     std::random_device rd{};
     std::mt19937 rng{rd()};
     ChoiceTrie constraints;
@@ -366,9 +366,9 @@ TEST_CASE("parameter gradients and generative function calls", "[dml]") {
 // *********************************************
 
 
-namespace gen::tests::dml {
+namespace gentorch::tests::dml {
 
-    struct ParametersTestTorchCallerModule : public gen::Parameters {
+    struct ParametersTestTorchCallerModule : public gentorch::Parameters {
         torch::nn::Linear linear {nullptr};
         ParametersTestTorchCallerModule() {
             c10::InferenceMode guard{false};
@@ -380,7 +380,7 @@ namespace gen::tests::dml {
     public:
         explicit ParametersTestTorchCaller(Tensor x) : DMLGenFn<M,A,R,P>{x} {}
         template <typename T>
-        return_type forward(T& tracer) {
+        return_type forward(T& tracer) const {
             auto& parameters = tracer.get_parameters();
             const auto& x = tracer.get_args();
             auto y = parameters.linear->forward(x);
@@ -393,7 +393,7 @@ namespace gen::tests::dml {
 TEST_CASE("parameter gradients and torch modules", "[dml]") {
     c10::InferenceMode guard{true};
 
-    gen::tests::dml::ParametersTestTorchCallerModule parameters;
+    gentorch::tests::dml::ParametersTestTorchCallerModule parameters;
     auto x = tensor({1.0, 2.0, 3.0});
     auto retval_grad = tensor({4.0, 5.0});
     double scaler = 6.0;
@@ -403,7 +403,7 @@ TEST_CASE("parameter gradients and torch modules", "[dml]") {
 
     // compute actual gradients with respect to theta1 and theta2
     GradientAccumulator accum {parameters};
-    gen::tests::dml::ParametersTestTorchCaller model {x};
+    gentorch::tests::dml::ParametersTestTorchCaller model {x};
     std::random_device rd{};
     std::mt19937 rng{rd()};
     auto trace = model.simulate(rng, parameters, SimulateOptions().precompute_gradient(true));
@@ -417,11 +417,11 @@ TEST_CASE("parameter gradients and torch modules", "[dml]") {
 // *** multithreaded parameter gradients ***
 // *****************************************
 
-void simulate_and_gradients(int n, gen::tests::dml::ParametersTestCallerModule& parameters, GradientAccumulator& accum) {
+void simulate_and_gradients(int n, gentorch::tests::dml::ParametersTestCallerModule& parameters, GradientAccumulator& accum) {
     std::random_device rd{};
     std::mt19937 rng{rd()};
     Tensor x = tensor(1.0);
-    gen::tests::dml::ParametersTestCaller model {x};
+    gentorch::tests::dml::ParametersTestCaller model {x};
     for (int i = 0; i < n; i++) {
         auto trace = model.simulate(rng, parameters, SimulateOptions().precompute_gradient(true));
         trace->parameter_gradient(accum, tensor(1.0), 1.0);
@@ -431,7 +431,7 @@ void simulate_and_gradients(int n, gen::tests::dml::ParametersTestCallerModule& 
 TEST_CASE("multithreaded simulate and gradients", "[dml, parameters, multithreaded]") {
     c10::InferenceMode guard{true};
 
-    gen::tests::dml::ParametersTestCallerModule parameters;
+    gentorch::tests::dml::ParametersTestCallerModule parameters;
     torch::optim::SGD sgd {parameters.all_parameters(), torch::optim::SGDOptions(0.1)};
 
     size_t num_threads = 20;

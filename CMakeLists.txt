@@ -1,12 +1,6 @@
-cmake_minimum_required(VERSION 3.7...3.22)
+cmake_minimum_required(VERSION 3.12...3.22)
 
-if(${CMAKE_VERSION} VERSION_LESS 3.12)
-    cmake_policy(VERSION ${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION})
-endif()
-
-project(GenTorch VERSION 1.0
-            LANGUAGES CXX)
-
+project(GenTorch VERSION 1.0 LANGUAGES CXX)
 find_package(Threads REQUIRED)
 
 # Only do these if this is the main project, and not if it is included through add_subdirectory

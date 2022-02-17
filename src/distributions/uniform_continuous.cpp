@@ -1,4 +1,4 @@
-/* Copyright 2021 The LibGen Authors
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,9 +13,9 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-#include <gen/distributions/uniform_continuous.h>
+#include <gentorch/distributions/uniform_continuous.h>
 
-namespace gen::distributions::uniform_continuous {
+namespace gentorch::distributions::uniform_continuous {
 
     // logic
 
@@ -40,12 +40,12 @@ namespace gen::distributions::uniform_continuous {
 
     [[nodiscard]] double UniformContinuousDist::log_density(const Tensor& x) const {
         float x_float = *x.data_ptr<float>();
-        return gen::distributions::uniform_continuous::log_density(min_, max_, x_float);
+        return gentorch::distributions::uniform_continuous::log_density(min_, max_, x_float);
     }
 
     [[nodiscard]] std::tuple<Tensor, Tensor, Tensor> UniformContinuousDist::log_density_gradient(const Tensor& x) const {
         float x_float = *x.data_ptr<float>();
-        auto grad = gen::distributions::uniform_continuous::log_density_gradient(min_, max_, x_float);
+        auto grad = gentorch::distributions::uniform_continuous::log_density_gradient(min_, max_, x_float);
         return {tensor(std::get<0>(grad)), tensor(std::get<1>(grad)), tensor(std::get<2>(grad))};
     }
 

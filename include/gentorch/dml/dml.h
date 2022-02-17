@@ -1,4 +1,4 @@
-/* Copyright 2021 The LibGen Authors
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ See the License for the specific language governing permissions and
 #ifndef GENTORCH_DML_H
 #define GENTORCH_DML_H
 
-namespace gen::dml {
+namespace gentorch::dml {
 
 // TODO rename 'Model' to 'Program'
 
@@ -35,17 +35,21 @@ template<typename RNG, typename Model>
 class DMLGenerateTracer;
 
 template<typename RNG, typename Model>
+class DMLAssessTracer;
+
+template<typename RNG, typename Model>
 class DMLUpdateTracer;
 
 }
 
-#include <gen/dml/autodiff.h>
-#include <gen/dml/gen_fn.h>
-#include <gen/dml/trace.h>
-#include <gen/dml/simulate.h>
-#include <gen/dml/generate.h>
-#include <gen/dml/update.h>
-#include <gen/dml/parameter_gradient.h>
-//#include <gen/dml/choice_gradient.h>
+#include <gentorch/dml/autodiff.h>
+#include <gentorch/dml/gen_fn.h>
+#include <gentorch/dml/trace.h>
+#include <gentorch/dml/simulate.h>
+#include <gentorch/dml/generate.h>
+#include <gentorch/dml/assess.h>
+#include <gentorch/dml/update.h>
+#include <gentorch/dml/parameter_gradient.h>
+//#include <gentorch/dml/choice_gradient.h>
 
 #endif // GENTORCH_DML_H

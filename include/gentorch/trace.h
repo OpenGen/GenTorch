@@ -1,4 +1,4 @@
-/* Copyright 2021 The LibGen Authors
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,14 +13,14 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-#pragma once
+#ifndef GENTORCH_TRACE_H
+#define GENTORCH_TRACE_H
 
-#include <gen/trie.h>
-#include <gen/parameters.h>
-
+#include <gentorch/trie.h>
+#include <gentorch/parameters.h>
 #include <any>
 
-namespace gen {
+namespace gentorch {
 
     /**
      * Immutable execution of a generative function.
@@ -44,16 +44,11 @@ namespace gen {
 
         virtual void revert() = 0;
 
-        virtual std::unique_ptr<Trace> fork() = 0;
-
-//        /**
-//         * @return the return value of the generative function.
-//         */
-//        [[nodiscard]] virtual const std::any* get_return_value() const = 0;
-
-//        virtual std::any gradients(std::any retval_grad, double scaler, GradientAccumulator& accumulator) = 0;
+        virtual std::unique_ptr<Trace> fork_type_erased() = 0;
 
 
     };
 
 }
+
+#endif // GENTORCH_TRACE_H

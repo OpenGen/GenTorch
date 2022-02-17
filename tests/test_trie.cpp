@@ -1,4 +1,4 @@
-/* Copyright 2021 The LibGen Authors
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 ==============================================================================*/
 
 #include <catch2/catch.hpp>
-#include <gen/trie.h>
+#include <gentorch/trie.h>
 
 #include <cassert>
 #include <iostream>
@@ -28,7 +28,7 @@ using std::any, std::make_any, std::any_cast;
 using torch::Tensor;
 using torch::TensorOptions;
 using torch::tensor;
-using gen::ChoiceTrie;
+using gentorch::ChoiceTrie;
 
 TEST_CASE("empty", "[trie]")  {
     ChoiceTrie trie {};

@@ -26,7 +26,7 @@ See the License for the specific language governing permissions and
 #include <gentorch/conversions.h>
 
 #include <gentl/util/randutils.h>
-#include <gentl/inference/mcmc.h>
+#include <gentl/inference/particle_filter.h>
 
 using gentl::randutils::seed_seq_fe128;
 using torch::Tensor, torch::tensor;
@@ -38,24 +38,45 @@ using gentorch::distributions::normal::Normal;
 using gentorch::Nothing, gentorch::nothing;
 using std::cout, std::endl;
 
+namespace gentorch::test_particle_filter {
+
 struct Model;
-struct Model : public DMLGenFn<Model, Nothing, Nothing, EmptyModule> {
-    explicit Model() : DMLGenFn<M, A, R, P>(nothing) {};
+
+struct Model : public DMLGenFn<Model, std::pair<size_t, Tensor>, Nothing, EmptyModule> {
+    explicit Model(size_t num_steps, Tensor init_x) : DMLGenFn<M, A, R, P>({num_steps, init_x}) {};
+
     template<typename T>
-    return_type forward(T &tracer) const {
-        auto x = tracer.call({"x"}, Normal(tensor(0.0), tensor(1.0)));
+    return_type forward(T& tracer) const {
+        const auto&[num_steps, init_x] = tracer.get_args();
+        auto x = init_x.clone();
+        for (int i = 0; i < num_steps; i++) {
+            x = tracer.call({std::to_string(i), "x"}, Normal(x, tensor(1.0)));
+            auto y = tracer.call({std::to_string(i), "y"}, Normal(x, tensor(0.1)));
+        }
         return nothing;
     }
 };
 
-TEST_CASE("mh", "[mh]") {
+}
 
+TEST_CASE("particle filter") {
+    using gentorch::test_particle_filter::Model;
     EmptyModule parameters {};
     seed_seq_fe128 minibatch_seed{1};
     std::mt19937 rng(minibatch_seed);
-    Model model{};
-    auto proposal = [&model](const gentorch::dml::DMLTrace<Model>&) { return model; };
-    auto trace = model.simulate(rng, parameters, SimulateOptions());
-    bool accepted = gentl::mcmc::mh<gentorch::dml::DMLTrace<Model>>(rng, *trace, proposal, parameters);
-    REQUIRE(accepted);
+    Model model{0, tensor(0.0)};
+    gentl::smc::ParticleSystem<Model::trace_type,std::mt19937> filter{1, rng};
+    filter.init_step(model, parameters, ChoiceTrie{});
+    {
+        ChoiceTrie constraints;
+        constraints.set_value({std::to_string(0), "y"}, tensor(1.0));
+        filter.step(gentl::change::UnknownChange<Model>(Model{1, tensor(0.0)}), constraints);
+        filter.resample();
+    }
+    {
+        ChoiceTrie constraints;
+        constraints.set_value({std::to_string(1), "y"}, tensor(2.0));
+        filter.step(gentl::change::UnknownChange<Model>(Model{2, tensor(0.0)}), constraints);
+        filter.resample();
+    }
 }

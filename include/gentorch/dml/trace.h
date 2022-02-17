@@ -1,4 +1,4 @@
-/* Copyright 2021 The LibGen Authors
+/* Copyright 2021-2022 Massachusetts Institute of Technology
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,14 +13,14 @@ See the License for the specific language governing permissions and
         limitations under the License.
 ==============================================================================*/
 
-#ifndef GENTORCH_TRACE_H
-#define GENTORCH_TRACE_H
+#ifndef GENTORCH_DML_TRACE_H
+#define GENTORCH_DML_TRACE_H
 
-#include <gen/address.h>
-#include <gen/trie.h>
-#include <gen/conversions.h>
-#include <gen/trace.h>
-#include <gen/parameters.h>
+#include <gentorch/address.h>
+#include <gentorch/trie.h>
+#include <gentorch/conversions.h>
+#include <gentorch/trace.h>
+#include <gentorch/parameters.h>
 
 #include <gentl/concepts.h>
 #include <gentl/types.h>
@@ -49,9 +49,9 @@ using torch::autograd::Node;
 using torch::autograd::VariableInfo;
 using torch::autograd::edge_list;
 
-using gen::GradientAccumulator;
+using gentorch::GradientAccumulator;
 
-namespace gen::dml {
+namespace gentorch::dml {
 
 
 class DMLAlreadyVisitedError : public std::exception {
@@ -116,7 +116,7 @@ struct SubtraceRecord {
             subtrace{std::move(subtrace_)} {}
     SubtraceRecord(const SubtraceRecord& other) :
             state{other.state}, was_active{other.was_active}, is_active{other.is_active},
-            subtrace{other.subtrace->fork()} { }
+            subtrace{other.subtrace->fork_type_erased()} { }
     SubtraceRecord(SubtraceRecord&& other) noexcept = default;
 };
 
@@ -302,13 +302,19 @@ public:
     template<typename RNG>
     double update(RNG &rng, const gentl::change::UnknownChange<Model> &change,
                   const ChoiceTrie &constraints, const UpdateOptions &options);
-    const ChoiceTrie &backward_constraints() const;
+    template<typename RNG>
+    double update(RNG &rng, const gentl::change::NoChange &change,
+                  const ChoiceTrie &constraints, const UpdateOptions &options);
+    [[nodiscard]] const ChoiceTrie &backward_constraints() const;
     void revert() override;
     void set_backward_constraints(std::unique_ptr<ChoiceTrie> &&backward_constraints);
-    std::unique_ptr<Trace> fork();
+    [[nodiscard]] std::unique_ptr<DMLTrace<Model>> fork();
+    std::unique_ptr<Trace> fork_type_erased() override {
+        return fork();
+    }
 };
 
 }
 
 
-#endif //GENTORCH_TRACE_H
+#endif //GENTORCH_DML_TRACE_H
