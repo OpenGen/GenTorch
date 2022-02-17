@@ -1,5 +1,7 @@
 # Design notes
 
+**NOTE: These are out of date**
+
 ## Address class
 
 The `Address` class is an immutable type that stores a sequence of keys (which are currently each `std::string`),
