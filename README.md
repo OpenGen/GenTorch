@@ -4,7 +4,7 @@
 
 **Work-in-progress** probabilistic programming language for use with [GenTL](https://github.com/OpenGen/GenTL), building on [LibTorch](https://pytorch.org/cppdocs/installing.html).
 
-[**Documentation**](https://opengen.github.io/gentorch-docs/latest/)
+[**Documentation (work-in-progress)**](https://opengen.github.io/gentorch-docs/latest/)
 
 ## External dependencies
 
@@ -12,7 +12,9 @@
 
 For example, either [clang++-13](https://clang.llvm.org/get_started.html) or [g++-11](https://gcc.gnu.org/).
 
-### CMake 3.7 or above
+NOTE: The multi-threaded supervised learning function in GenTL currently requires a C++20 feature, which is implemented in `gcc` version 11 and above and `clang` version 11 and above.
+
+### CMake
 
 See [Installing CMake](https://cmake.org/install/)
 
