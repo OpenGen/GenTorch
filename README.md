@@ -1,5 +1,7 @@
 # GenTorch
 
+[![Test](https://github.com/OpenGen/GenTorch/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/OpenGen/GenTorch/actions/workflows/test.yml)
+
 **Work-in-progress** probabilistic programming language for use with [GenTL](https://github.com/OpenGen/GenTL), building on [LibTorch](https://pytorch.org/cppdocs/installing.html).
 
 [**Documentation**](https://opengen.github.io/gentorch-docs/latest/)
