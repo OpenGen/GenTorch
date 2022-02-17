@@ -58,3 +58,9 @@ To build documentation:
 ```shell
 cmake --build build --target docs
 ```
+
+## References
+
+Gen: A General-Purpose Probabilistic Programming System with Programmable Inference. Cusumano-Towner, M. F.; Saad, F. A.; Lew, A.; and Mansinghka, V. K. In Proceedings of the 40th ACM SIGPLAN Conference on Programming Language Design and Implementation (PLDI ‘19). ([pdf](https://dl.acm.org/doi/10.1145/3314221.3314642)) ([bibtex](assets/gen-pldi.txt))
+
+Marco Cusumano-Towner's [PhD thesis](https://www.mct.dev).
