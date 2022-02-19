@@ -19,44 +19,5 @@ You can call other GenTorch probabilistic programs, primitive probabilistic prog
 ## Using your probabilistic program
 
 Why write your model as a probabilistic program? Because GenTorch will automatically implement a number of functions that are useful for doing inference and learning with the model.
-These functions together implement the interface expected by the [GenTL](https://github.com/OpenGen/GenTL/) library, which includes implementations of several composable inference and learning algorithms that you can apply to your model.
+These functions together implement the interface expected by the [GenTL](https://github.com/OpenGen/GenTL/) library (see [interface](https://opengen.github.io/gentl-docs/latest/#interface)), which includes implementations of several composable inference and learning algorithms that you can apply to your model.
 You can also write your own inference and learning algorithms using the functions provided by GenTorch.
-
-The functions are:
-
-- simulate
-
-- generate
-
-- score
-
-- update
-
-- revert
-
-- fork
-
-- choices
-
-- parameter_gradient
-
-- choice_gradient
-
-
-## Basic types:
-
-- gentorch::Address
-
-- gentorch::Trie
-
-- gentorch::Module
-
-- gentorch::Trace
-
-- gentorch::GradientAccumulator
-
-Types of generative functions:
-
-- gentorch::dml::DMLGenFn
-
-- gentorch::distributions::normal::Normal
